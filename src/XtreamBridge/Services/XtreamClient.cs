@@ -56,16 +56,7 @@ public sealed class XtreamClient
             }
         };
 
-        ConfigureUserAgent();
-    }
-
-    private void ConfigureUserAgent()
-    {
-        var ua = _settings.Bridge.UserAgent;
-        _http.DefaultRequestHeaders.UserAgent.Clear();
-        // Default: VLC User-Agent — universally accepted by Xtream servers
-        var uaString = string.IsNullOrWhiteSpace(ua) ? "VLC/3.0.18 LibVLC/3.0.18" : ua;
-        _http.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", uaString);
+        // User-Agent and Accept are configured in Program.cs via AddHttpClient
     }
 
     // ── Auth ──────────────────────────────────────────────────────────────────
@@ -291,6 +282,16 @@ public sealed class XtreamClient
             {
                 _logger.LogDebug("GET {Url}", url);
                 using var response = await _http.GetAsync(url, ct);
+
+                // Log diagnostic info for every response (helps debug HTML issues)
+                var finalUrl    = response.RequestMessage?.RequestUri?.ToString() ?? url;
+                var contentType = response.Content.Headers.ContentType?.MediaType ?? "unknown";
+                _logger.LogDebug("Response {Code} | Content-Type: {CT} | Final-URL: {FUrl}",
+                    (int)response.StatusCode, contentType, finalUrl);
+
+                if (finalUrl != url)
+                    _logger.LogWarning("Redirect detected: {From} → {To}", url, finalUrl);
+
                 response.EnsureSuccessStatusCode();
                 var content = await response.Content.ReadAsStringAsync(ct);
                 if (RequestDelayMs > 0) await Task.Delay(RequestDelayMs, ct);

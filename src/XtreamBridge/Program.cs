@@ -48,6 +48,8 @@ builder.Services.AddSingleton<SyncStateRepository>();
 builder.Services.AddHttpClient<XtreamClient>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(30);
+    client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "VLC/3.0.18 LibVLC/3.0.18");
+    client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json, text/plain, */*");
 });
 
 // Named HTTP client for TMDb metadata (no Xtream credentials)
@@ -58,7 +60,7 @@ builder.Services.AddHttpClient("tmdb", client =>
 });
 
 // ── Application Services ──────────────────────────────────────────────────────
-builder.Services.AddScoped<XtreamClient>();
+// NOTE: do NOT add AddScoped<XtreamClient>() here — AddHttpClient<XtreamClient> already registers it
 builder.Services.AddScoped<StrmGeneratorService>();
 builder.Services.AddSingleton<EpgService>();
 builder.Services.AddSingleton<SnapshotService>();
