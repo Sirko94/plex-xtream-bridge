@@ -2,8 +2,6 @@
 // Removed all MediaBrowser/Jellyfin dependencies.
 
 using System.Net;
-using System.Net.Http.Headers;
-using System.Reflection;
 using System.Text;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
@@ -65,19 +63,9 @@ public sealed class XtreamClient
     {
         var ua = _settings.Bridge.UserAgent;
         _http.DefaultRequestHeaders.UserAgent.Clear();
-        if (string.IsNullOrWhiteSpace(ua))
-        {
-            var ver = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "1.0.0";
-            _http.DefaultRequestHeaders.UserAgent.Add(
-                new ProductInfoHeaderValue(new ProductHeaderValue("XtreamBridge", ver)));
-        }
-        else
-        {
-            if (ProductInfoHeaderValue.TryParse(ua, out var parsed))
-                _http.DefaultRequestHeaders.UserAgent.Add(parsed);
-            else
-                _http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue($"({ua})"));
-        }
+        // Default: VLC User-Agent — universally accepted by Xtream servers
+        var uaString = string.IsNullOrWhiteSpace(ua) ? "VLC/3.0.18 LibVLC/3.0.18" : ua;
+        _http.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", uaString);
     }
 
     // ── Auth ──────────────────────────────────────────────────────────────────
