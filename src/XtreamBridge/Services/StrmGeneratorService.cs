@@ -119,29 +119,33 @@ public sealed class StrmGeneratorService
                     return;
                 }
 
-                // ── Slow path: new or modified — call get_vod_info ─────────────
-                XtreamVodInfoResponse? info = null;
-                if (Settings.Sync.GenerateNfoFiles)
-                    info = await _client.GetVodInfoAsync(vod.StreamId, innerCt);
+                // ── Slow path: new or modified — NO get_vod_info needed ────────
+                // All data (name, year, poster, tmdb_id, plot…) comes from the bulk response.
+                // TMDb API is called optionally to enrich with extra metadata.
 
-                var details  = info?.Info;
-                var year     = ParseYear(details?.ReleaseDate);
-                var title    = Sanitize(details?.Name ?? vod.Name);
+                var year     = ParseYear(vod.Year);
+                var title    = Sanitize(vod.Name);
                 var fileName = year > 0 ? $"{title} ({year})" : title;
                 var dir      = Path.Combine(OutputRoot, "Movies", catName);
                 Directory.CreateDirectory(dir);
 
                 var url      = _client.BuildVodStreamUrl(vod.StreamId, vod.ContainerExtension);
                 var strmPath = Path.Combine(dir, $"{fileName}.strm");
-                File.WriteAllText(strmPath, url, Encoding.UTF8); // always overwrite on change
+                File.WriteAllText(strmPath, url, Encoding.UTF8);
 
                 if (Settings.Sync.GenerateNfoFiles)
                 {
                     TmdbResult? tmdb = null;
                     if (Settings.Sync.EnableMetadataLookup && !string.IsNullOrEmpty(Settings.Sync.TmdbApiKey))
-                        tmdb = await _metadata.SearchMovieAsync(vod.Name, year, innerCt);
+                    {
+                        // Use TMDb ID from bulk data if available — avoids a search request
+                        if (!string.IsNullOrEmpty(vod.BestTmdbId) && int.TryParse(vod.BestTmdbId, out var tmdbId))
+                            tmdb = await _metadata.GetMovieByIdAsync(tmdbId, innerCt);
+                        else
+                            tmdb = await _metadata.SearchMovieAsync(vod.Name, year, innerCt);
+                    }
 
-                    await NfoWriter.WriteMovieNfoAsync(Path.Combine(dir, $"{fileName}.nfo"), vod, details, tmdb);
+                    await NfoWriter.WriteMovieNfoAsync(Path.Combine(dir, $"{fileName}.nfo"), vod, tmdb);
                 }
 
                 state.SyncedVodIds.Add(vod.StreamId);
@@ -245,8 +249,12 @@ public sealed class StrmGeneratorService
             {
                 TmdbResult? tmdb = null;
                 if (Settings.Sync.EnableMetadataLookup && !string.IsNullOrEmpty(Settings.Sync.TmdbApiKey))
-                    tmdb = await _metadata.SearchSeriesAsync(series.Name, 0, ct);
-
+                {
+                    if (!string.IsNullOrEmpty(series.BestTmdbId) && int.TryParse(series.BestTmdbId, out var tmdbId))
+                        tmdb = await _metadata.GetSeriesByIdAsync(tmdbId, ct);
+                    else
+                        tmdb = await _metadata.SearchSeriesAsync(series.Name, 0, ct);
+                }
                 await NfoWriter.WriteSeriesNfoAsync(Path.Combine(seriesDir, "tvshow.nfo"), series, tmdb);
             }
 

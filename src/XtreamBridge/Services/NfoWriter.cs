@@ -20,25 +20,31 @@ public static class NfoWriter
 
     // ── Movie NFO ─────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Writes a movie NFO using data from the bulk get_vod_streams response.
+    /// No get_vod_info call needed — all fields come from the bulk data.
+    /// TMDb enrichment (plot, cast, etc.) is optional and uses the BestTmdbId already present.
+    /// </summary>
     public static async Task WriteMovieNfoAsync(
         string path,
         XtreamVodStream vod,
-        XtreamVodInfoDetails? details,
         TmdbResult? tmdb = null)
     {
         if (File.Exists(path)) return;
 
-        var title       = details?.Name ?? tmdb?.Title ?? vod.Name;
-        var originalTitle = details?.OriginalName ?? tmdb?.OriginalTitle ?? title;
-        var year        = ParseYear(details?.ReleaseDate ?? tmdb?.ReleaseDate);
-        var overview    = details?.Plot ?? tmdb?.Overview ?? string.Empty;
-        var posterUrl   = details?.MovieImage ?? tmdb?.PosterUrl ?? string.Empty;
-        var rating      = details?.Rating ?? string.Empty;
-        var genre       = details?.Genre ?? string.Empty;
-        var director    = details?.Director ?? string.Empty;
-        var cast        = details?.Cast ?? string.Empty;
-        var durationMin = (details?.DurationSecs ?? 0) / 60;
-        var tmdbId      = details?.TmdbId ?? (tmdb is not null ? tmdb.TmdbId.ToString() : null);
+        // Prefer TMDb data when available, fall back to bulk stream data
+        var title         = tmdb?.Title         ?? vod.Name;
+        var originalTitle = tmdb?.OriginalTitle  ?? vod.Name;
+        var year          = ParseYear(tmdb?.ReleaseDate) > 0
+                                ? ParseYear(tmdb?.ReleaseDate)
+                                : ParseYear(vod.Year);
+        var overview      = tmdb?.Overview       ?? vod.Plot     ?? string.Empty;
+        var posterUrl     = tmdb?.PosterUrl       ?? vod.StreamIcon ?? string.Empty;
+        var rating        = vod.Rating            ?? vod.Rating5Based ?? string.Empty;
+        var genre         = vod.Genre             ?? string.Empty;
+        var director      = tmdb?.Director        ?? vod.Director ?? string.Empty;
+        var cast          = tmdb?.Cast            ?? vod.Cast     ?? string.Empty;
+        var tmdbId        = tmdb is not null ? tmdb.TmdbId.ToString() : vod.BestTmdbId;
 
         var sb = new StringBuilder();
         using (var sw = new StringWriter(sb))
@@ -50,13 +56,13 @@ public static class NfoWriter
             w.WriteElementString("title", title);
             w.WriteElementString("originaltitle", originalTitle);
             if (year > 0) w.WriteElementString("year", year.ToString());
-            if (!string.IsNullOrEmpty(rating)) w.WriteElementString("rating", rating);
-            if (!string.IsNullOrEmpty(overview)) w.WriteElementString("plot", overview);
-            if (!string.IsNullOrEmpty(genre)) w.WriteElementString("genre", genre);
-            if (!string.IsNullOrEmpty(director)) w.WriteElementString("director", director);
-            if (!string.IsNullOrEmpty(cast)) w.WriteElementString("credits", cast);
-            if (!string.IsNullOrEmpty(posterUrl)) w.WriteElementString("thumb", posterUrl);
-            if (durationMin > 0) w.WriteElementString("runtime", durationMin.ToString());
+            if (!string.IsNullOrEmpty(rating))    w.WriteElementString("rating",    rating);
+            if (!string.IsNullOrEmpty(overview))   w.WriteElementString("plot",      overview);
+            if (!string.IsNullOrEmpty(genre))      w.WriteElementString("genre",     genre);
+            if (!string.IsNullOrEmpty(director))   w.WriteElementString("director",  director);
+            if (!string.IsNullOrEmpty(cast))       w.WriteElementString("credits",   cast);
+            if (!string.IsNullOrEmpty(posterUrl))  w.WriteElementString("thumb",     posterUrl);
+            if (!string.IsNullOrEmpty(vod.YoutubeTrailer)) w.WriteElementString("trailer", $"plugin://plugin.video.youtube/?action=play_video&videoid={vod.YoutubeTrailer}");
 
             if (!string.IsNullOrEmpty(tmdbId))
             {

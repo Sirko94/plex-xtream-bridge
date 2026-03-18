@@ -14,6 +14,9 @@ public sealed class TmdbResult
     public string? Overview { get; set; }
     public string? PosterUrl { get; set; }
     public string? ReleaseDate { get; set; }
+    public string? Director { get; set; }
+    public string? Cast { get; set; }
+    public string? Genre { get; set; }
 }
 
 /// <summary>
@@ -46,10 +49,18 @@ public sealed class MetadataService
 
     // ── Movie ─────────────────────────────────────────────────────────────────
 
+    /// <summary>Fetch movie by known TMDb ID — faster than search, no ambiguity.</summary>
+    public Task<TmdbResult?> GetMovieByIdAsync(int tmdbId, CancellationToken ct = default)
+        => SearchAsync($"movie:id:{tmdbId}", () => FetchMovieByIdAsync(tmdbId, ct));
+
     public Task<TmdbResult?> SearchMovieAsync(string name, int year, CancellationToken ct = default)
         => SearchAsync($"movie:{name}:{year}", () => FetchMovieAsync(name, year, ct));
 
     // ── Series ────────────────────────────────────────────────────────────────
+
+    /// <summary>Fetch series by known TMDb ID — faster than search, no ambiguity.</summary>
+    public Task<TmdbResult?> GetSeriesByIdAsync(int tmdbId, CancellationToken ct = default)
+        => SearchAsync($"series:id:{tmdbId}", () => FetchSeriesByIdAsync(tmdbId, ct));
 
     public Task<TmdbResult?> SearchSeriesAsync(string name, int year, CancellationToken ct = default)
         => SearchAsync($"series:{name}:{year}", () => FetchSeriesAsync(name, year, ct));
@@ -84,6 +95,26 @@ public sealed class MetadataService
         finally { _cacheLock.Release(); }
 
         return result;
+    }
+
+    private async Task<TmdbResult?> FetchMovieByIdAsync(int tmdbId, CancellationToken ct)
+    {
+        var apiKey = _opts.CurrentValue.Sync.TmdbApiKey;
+        var url = $"{TmdbBase}/movie/{tmdbId}?api_key={Uri.EscapeDataString(apiKey)}&language=fr-FR";
+        using var response = await _http.GetAsync(url, ct);
+        if (!response.IsSuccessStatusCode) return null;
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        return ParseMovieResult(doc.RootElement);
+    }
+
+    private async Task<TmdbResult?> FetchSeriesByIdAsync(int tmdbId, CancellationToken ct)
+    {
+        var apiKey = _opts.CurrentValue.Sync.TmdbApiKey;
+        var url = $"{TmdbBase}/tv/{tmdbId}?api_key={Uri.EscapeDataString(apiKey)}&language=fr-FR";
+        using var response = await _http.GetAsync(url, ct);
+        if (!response.IsSuccessStatusCode) return null;
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        return ParseSeriesResult(doc.RootElement);
     }
 
     private async Task<TmdbResult?> FetchMovieAsync(string name, int year, CancellationToken ct)

@@ -105,6 +105,25 @@ public class XtreamVodStream
     [JsonProperty("container_extension")]  public string ContainerExtension { get; set; } = string.Empty;
     [JsonProperty("custom_sid")]           public string CustomSid { get; set; } = string.Empty;
     [JsonProperty("direct_source")]        public string DirectSource { get; set; } = string.Empty;
+
+    // Metadata often present in bulk response — avoids needing get_vod_info
+    [JsonProperty("tmdb_id")]              public string? TmdbId { get; set; }
+    [JsonProperty("tmdb")]                 public string? Tmdb { get; set; }      // some providers use "tmdb"
+    [JsonProperty("year")]                 public string? Year { get; set; }
+    [JsonProperty("rating")]               public string? Rating { get; set; }
+    [JsonProperty("rating_5based")]        public string? Rating5Based { get; set; }
+    [JsonProperty("plot")]                 public string? Plot { get; set; }
+    [JsonProperty("cast")]                 public string? Cast { get; set; }
+    [JsonProperty("director")]             public string? Director { get; set; }
+    [JsonProperty("genre")]                public string? Genre { get; set; }
+    [JsonProperty("backdrop_path")]        public string? BackdropPath { get; set; }
+    [JsonProperty("youtube_trailer")]      public string? YoutubeTrailer { get; set; }
+
+    /// <summary>Returns the best available TMDb ID from either tmdb_id or tmdb field.</summary>
+    [JsonIgnore]
+    public string? BestTmdbId => !string.IsNullOrWhiteSpace(TmdbId) ? TmdbId
+                                : !string.IsNullOrWhiteSpace(Tmdb)   ? Tmdb
+                                : null;
 }
 
 public class XtreamVodInfoResponse
@@ -153,9 +172,17 @@ public class XtreamSeries
     [JsonProperty("rating")]       public decimal? Rating { get; set; }
     [JsonProperty("episode_run_time")] public int? EpisodeRunTime { get; set; }
     [JsonProperty("category_id")]  public int? CategoryId { get; set; }
+    [JsonProperty("tmdb_id")]      public string? TmdbId   { get; set; }
+    [JsonProperty("tmdb")]         public string? Tmdb      { get; set; }
+    [JsonProperty("year")]         public string? Year      { get; set; }
 
     [JsonConverter(typeof(SingularToListConverter<string>))]
     [JsonProperty("backdrop_path")] public ICollection<string> BackdropPaths { get; set; } = new List<string>();
+
+    [JsonIgnore]
+    public string? BestTmdbId => !string.IsNullOrWhiteSpace(TmdbId) ? TmdbId
+                               : !string.IsNullOrWhiteSpace(Tmdb)   ? Tmdb
+                               : null;
 }
 
 public class XtreamSeriesStreamInfo
