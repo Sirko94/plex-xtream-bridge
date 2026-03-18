@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
 using XtreamBridge.Models;
 using XtreamBridge.Persistence;
+using XtreamBridge.Services;
 
 namespace XtreamBridge.Services;
 
@@ -97,10 +98,27 @@ public sealed class SyncBackgroundService : BackgroundService
         var strmGen = scope.ServiceProvider.GetRequiredService<StrmGeneratorService>();
 
         // 1. Verify auth
-        var auth = await client.AuthenticateAsync(ct);
-        if (auth?.UserInfo.Auth != 1)
+        XtreamPlayerApi? auth;
+        try
         {
-            _logger.LogError("Xtream authentication failed — check Server credentials");
+            auth = await client.AuthenticateAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Cannot reach Xtream provider at {Url} — check BaseUrl and network", settings.Server.BaseUrl);
+            return;
+        }
+
+        if (auth is null)
+        {
+            _logger.LogError("Xtream provider returned an empty response — check BaseUrl: {Url}", settings.Server.BaseUrl);
+            return;
+        }
+
+        if (auth.UserInfo.Auth != 1)
+        {
+            _logger.LogError("Xtream authentication failed (auth={Auth}, status={Status}) — check username/password",
+                auth.UserInfo.Auth, auth.UserInfo.Status);
             return;
         }
         _logger.LogInformation("Authenticated as {User} (status: {Status}, exp: {Exp})",

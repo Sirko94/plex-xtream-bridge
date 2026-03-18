@@ -21,9 +21,23 @@ builder.Host.UseSerilog();
 
 // ── Configuration ─────────────────────────────────────────────────────────────
 // Load in priority order: appsettings.json → override file → env vars
+// UsePollingFileWatcher=true ensures Docker bind-mount changes are detected
 var overridePath = Path.Combine(configDir, "appsettings.override.json");
+var overrideDir  = Path.GetDirectoryName(overridePath)!;
+Directory.CreateDirectory(overrideDir);
+
 builder.Configuration
-    .AddJsonFile(overridePath, optional: true, reloadOnChange: true)
+    .AddJsonFile(
+        new Microsoft.Extensions.FileProviders.PhysicalFileProvider(
+            overrideDir,
+            Microsoft.Extensions.FileProviders.Physical.ExclusionFilters.None)
+        {
+            UsePollingFileWatcher = true,
+            UseActivePolling      = true
+        },
+        Path.GetFileName(overridePath),
+        optional: true,
+        reloadOnChange: true)
     .AddEnvironmentVariables(prefix: "XTREAM__");
 
 builder.Services.Configure<AppSettings>(builder.Configuration);
