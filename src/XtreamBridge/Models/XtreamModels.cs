@@ -38,9 +38,22 @@ public class XtreamUserInfo
 
 public class XtreamServerInfo
 {
-    [JsonProperty("url")]      public string Url { get; set; } = string.Empty;
-    [JsonProperty("port")]     public string Port { get; set; } = string.Empty;
-    [JsonProperty("timezone")] public string Timezone { get; set; } = string.Empty;
+    [JsonProperty("url")]             public string Url { get; set; } = string.Empty;
+    [JsonProperty("port")]            public string Port { get; set; } = string.Empty;
+    [JsonProperty("https_port")]      public string HttpsPort { get; set; } = string.Empty;
+    [JsonProperty("server_protocol")] public string ServerProtocol { get; set; } = string.Empty;
+    [JsonProperty("rtmp_port")]       public string RtmpPort { get; set; } = string.Empty;
+    [JsonProperty("timezone")]        public string Timezone { get; set; } = string.Empty;
+    [JsonProperty("timestamp_now")]   public long? TimestampNow { get; set; }
+    [JsonProperty("time_now")]        public string TimeNow { get; set; } = string.Empty;
+    [JsonProperty("process")]         public bool Process { get; set; }
+}
+
+/// <summary>Wrapper for the newer REST-style response: {"data": {...}, "error": null}</summary>
+public class XtreamAccountInfoResponse
+{
+    [JsonProperty("data")]  public XtreamPlayerApi? Data  { get; set; }
+    [JsonProperty("error")] public string?          Error { get; set; }
 }
 
 // ─── Categories ───────────────────────────────────────────────────────────────
