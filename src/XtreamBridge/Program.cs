@@ -48,8 +48,7 @@ builder.Services.AddSingleton<SyncStateRepository>();
 builder.Services.AddHttpClient<XtreamClient>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(30);
-    client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "VLC/3.0.18 LibVLC/3.0.18");
-    client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json, text/plain, */*");
+    // No custom User-Agent — some Xtream servers redirect known players (VLC, Kodi…) to anti-piracy pages
 });
 
 // Named HTTP client for TMDb metadata (no Xtream credentials)

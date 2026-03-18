@@ -91,7 +91,7 @@ public sealed class ConfigController : ControllerBase
     [HttpPost("config/test")]
     public async Task<IActionResult> TestConnection([FromBody] XtreamServerSettings creds, CancellationToken ct)
     {
-        // Use the same typed HttpClient as XtreamClient (has VLC User-Agent + Accept headers)
+        // Plain HttpClient — no custom User-Agent (servers redirect VLC/Kodi UA to anti-piracy pages)
         var http = _httpFactory.CreateClient(nameof(XtreamClient));
         var e    = (string s) => Uri.EscapeDataString(s);
         var base_ = creds.BaseUrl.TrimEnd('/');
