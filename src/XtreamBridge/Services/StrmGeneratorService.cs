@@ -119,34 +119,34 @@ public sealed class StrmGeneratorService
                     return;
                 }
 
-                // ── Slow path: new or modified — NO get_vod_info needed ────────
-                // All data (name, year, poster, tmdb_id, plot…) comes from the bulk response.
-                // TMDb API is called optionally to enrich with extra metadata.
+                // ── Slow path: new or modified ─────────────────────────────────
+                // 1. TMDb lookup first (if enabled) — result determines final filename
+                // 2. Build filename from best available title + year
+                // 3. Write .strm and .nfo
 
-                var year     = ParseYear(vod.Year);
-                var title    = Sanitize(vod.Name);
+                TmdbResult? tmdb = null;
+                if (Settings.Sync.EnableMetadataLookup && !string.IsNullOrEmpty(Settings.Sync.TmdbApiKey))
+                {
+                    if (!string.IsNullOrEmpty(vod.BestTmdbId) && int.TryParse(vod.BestTmdbId, out var tmdbId))
+                        tmdb = await _metadata.GetMovieByIdAsync(tmdbId, innerCt);
+                    else
+                        tmdb = await _metadata.SearchMovieAsync(vod.Name, ParseYear(vod.Year), innerCt);
+                }
+
+                // Prefer TMDb title/year (cleaner), fall back to bulk data
+                var year     = tmdb?.Year > 0 ? tmdb.Year : ParseYear(vod.Year);
+                var title    = Sanitize(tmdb?.Title ?? vod.Name);
                 var fileName = year > 0 ? $"{title} ({year})" : title;
                 var dir      = Path.Combine(OutputRoot, "Movies", catName);
                 Directory.CreateDirectory(dir);
 
+                // .strm = one line: the proxied stream URL
                 var url      = _client.BuildVodStreamUrl(vod.StreamId, vod.ContainerExtension);
-                var strmPath = Path.Combine(dir, $"{fileName}.strm");
-                File.WriteAllText(strmPath, url, Encoding.UTF8);
+                File.WriteAllText(Path.Combine(dir, $"{fileName}.strm"), url, Encoding.UTF8);
 
+                // .nfo = metadata from bulk + optional TMDb enrichment
                 if (Settings.Sync.GenerateNfoFiles)
-                {
-                    TmdbResult? tmdb = null;
-                    if (Settings.Sync.EnableMetadataLookup && !string.IsNullOrEmpty(Settings.Sync.TmdbApiKey))
-                    {
-                        // Use TMDb ID from bulk data if available — avoids a search request
-                        if (!string.IsNullOrEmpty(vod.BestTmdbId) && int.TryParse(vod.BestTmdbId, out var tmdbId))
-                            tmdb = await _metadata.GetMovieByIdAsync(tmdbId, innerCt);
-                        else
-                            tmdb = await _metadata.SearchMovieAsync(vod.Name, year, innerCt);
-                    }
-
                     await NfoWriter.WriteMovieNfoAsync(Path.Combine(dir, $"{fileName}.nfo"), vod, tmdb);
-                }
 
                 state.SyncedVodIds.Add(vod.StreamId);
                 Interlocked.Increment(ref created);
@@ -235,8 +235,25 @@ public sealed class StrmGeneratorService
                 continue;
             }
 
-            // ── Slow path: new or modified — call get_series_info ─────────────
+            // ── Slow path: new or modified ─────────────────────────────────────
+            // 1. TMDb lookup first — determines folder name
+            // 2. get_series_info — needed only for episode list
+            // 3. Write tvshow.nfo + episode .strm/.nfo
+
+            TmdbResult? tmdb = null;
+            if (Settings.Sync.EnableMetadataLookup && !string.IsNullOrEmpty(Settings.Sync.TmdbApiKey))
+            {
+                if (!string.IsNullOrEmpty(series.BestTmdbId) && int.TryParse(series.BestTmdbId, out var tmdbId))
+                    tmdb = await _metadata.GetSeriesByIdAsync(tmdbId, ct);
+                else
+                    tmdb = await _metadata.SearchSeriesAsync(series.Name, 0, ct);
+            }
+
+            // Prefer TMDb title for folder name (cleaner), fall back to provider name
+            var seriesTitle = Sanitize(tmdb?.Title ?? series.Name);
+            seriesDir = Path.Combine(OutputRoot, "Series", catName, seriesTitle);
             Directory.CreateDirectory(seriesDir);
+
             var info = await _client.GetSeriesStreamsBySeriesAsync(series.SeriesId, ct);
             if (info?.Episodes is null)
             {
@@ -246,17 +263,7 @@ public sealed class StrmGeneratorService
             }
 
             if (Settings.Sync.GenerateNfoFiles)
-            {
-                TmdbResult? tmdb = null;
-                if (Settings.Sync.EnableMetadataLookup && !string.IsNullOrEmpty(Settings.Sync.TmdbApiKey))
-                {
-                    if (!string.IsNullOrEmpty(series.BestTmdbId) && int.TryParse(series.BestTmdbId, out var tmdbId))
-                        tmdb = await _metadata.GetSeriesByIdAsync(tmdbId, ct);
-                    else
-                        tmdb = await _metadata.SearchSeriesAsync(series.Name, 0, ct);
-                }
                 await NfoWriter.WriteSeriesNfoAsync(Path.Combine(seriesDir, "tvshow.nfo"), series, tmdb);
-            }
 
             foreach (var ep in info.Episodes.SelectMany(kv => kv.Value))
             {
