@@ -81,6 +81,15 @@ public sealed class SyncBackgroundService : BackgroundService
     {
         _logger.LogInformation("=== Full library sync started ===");
         var settings = _opts.CurrentValue;
+
+        // Skip sync entirely if credentials are not configured yet
+        if (string.IsNullOrWhiteSpace(settings.Server.BaseUrl) ||
+            string.IsNullOrWhiteSpace(settings.Server.Username))
+        {
+            _logger.LogWarning("Sync skipped — no Xtream credentials configured. Open the web UI to set them up.");
+            return;
+        }
+
         var state = await _repo.LoadAsync(ct);
 
         using var scope = _scopeFactory.CreateScope();
