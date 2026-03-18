@@ -184,6 +184,10 @@ public sealed class XtreamClient
     public Task<List<XtreamCategory>?> GetVodCategoriesAsync(CancellationToken ct = default)
         => QueryApiAsync<List<XtreamCategory>>(PlayerApiUrl("get_vod_categories"), ct);
 
+    /// <summary>Fetch ALL VOD streams in one request (no category_id) — avoids per-category 429.</summary>
+    public Task<List<XtreamVodStream>?> GetAllVodStreamsAsync(CancellationToken ct = default)
+        => QueryApiAsync<List<XtreamVodStream>>(PlayerApiUrl("get_vod_streams"), ct);
+
     public Task<List<XtreamVodStream>?> GetVodStreamsByCategoryAsync(int categoryId, CancellationToken ct = default)
         => QueryApiAsync<List<XtreamVodStream>>(PlayerApiUrl("get_vod_streams", ("category_id", categoryId.ToString())), ct);
 
@@ -197,6 +201,10 @@ public sealed class XtreamClient
 
     public Task<List<XtreamCategory>?> GetSeriesCategoriesAsync(CancellationToken ct = default)
         => QueryApiAsync<List<XtreamCategory>>(PlayerApiUrl("get_series_categories"), ct);
+
+    /// <summary>Fetch ALL series in one request (no category_id) — avoids per-category 429.</summary>
+    public Task<List<XtreamSeries>?> GetAllSeriesAsync(CancellationToken ct = default)
+        => QueryApiAsync<List<XtreamSeries>>(PlayerApiUrl("get_series"), ct);
 
     public Task<List<XtreamSeries>?> GetSeriesByCategoryAsync(int categoryId, CancellationToken ct = default)
         => QueryApiAsync<List<XtreamSeries>>(PlayerApiUrl("get_series", ("category_id", categoryId.ToString())), ct);

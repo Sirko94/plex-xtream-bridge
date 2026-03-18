@@ -61,14 +61,12 @@ public sealed class StrmGeneratorService
         var catMap     = categories.ToDictionary(c => c.CategoryId, c => Sanitize(c.CategoryName));
         var filter     = _opts.CurrentValue.Sync.VodCategoryFilter;
 
-        // Gather all streams
-        var allStreams = new List<XtreamVodStream>();
-        foreach (var catId in GetCategoryIds(filter, categories.Select(c => c.CategoryId)))
-        {
-            if (ct.IsCancellationRequested) break;
-            var streams = await _client.GetVodStreamsByCategoryAsync(catId, ct) ?? new();
-            allStreams.AddRange(streams);
-        }
+        // Single request for all streams — avoids per-category 429 rate limiting
+        _logger.LogInformation("Fetching all VOD streams in one request…");
+        var allStreams = await _client.GetAllVodStreamsAsync(ct) ?? new();
+        if (filter.Count > 0)
+            allStreams = allStreams.Where(s => s.CategoryId.HasValue && filter.Contains(s.CategoryId.Value)).ToList();
+        _logger.LogInformation("VOD streams fetched: {Count}", allStreams.Count);
 
         // Load previous snapshot and compute delta
         ContentSnapshot? prevSnapshot = null;
@@ -168,13 +166,12 @@ public sealed class StrmGeneratorService
         var catMap     = categories.ToDictionary(c => c.CategoryId, c => Sanitize(c.CategoryName));
         var filter     = _opts.CurrentValue.Sync.SeriesCategoryFilter;
 
-        var allSeries = new List<XtreamSeries>();
-        foreach (var catId in GetCategoryIds(filter, categories.Select(c => c.CategoryId)))
-        {
-            if (ct.IsCancellationRequested) break;
-            var seriesList = await _client.GetSeriesByCategoryAsync(catId, ct) ?? new();
-            allSeries.AddRange(seriesList);
-        }
+        // Single request for all series — avoids per-category 429 rate limiting
+        _logger.LogInformation("Fetching all series in one request…");
+        var allSeries = await _client.GetAllSeriesAsync(ct) ?? new();
+        if (filter.Count > 0)
+            allSeries = allSeries.Where(s => s.CategoryId.HasValue && filter.Contains(s.CategoryId.Value)).ToList();
+        _logger.LogInformation("Series fetched: {Count}", allSeries.Count);
 
         ContentSnapshot? prevSnapshot = null;
         if (_opts.CurrentValue.Sync.EnableSnapshotSync && !forceFullSync)
