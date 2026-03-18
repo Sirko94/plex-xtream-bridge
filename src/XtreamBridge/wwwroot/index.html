@@ -236,9 +236,14 @@
             </label>
             <div>
               <div class="toggle-label">Génération STRM</div>
-              <div class="hint">Créer des fichiers .strm et .nfo dans /output</div>
+              <div class="hint">Créer des fichiers .strm et .nfo pour Plex</div>
             </div>
           </div>
+        </div>
+        <div class="form-group" style="margin-top:1rem">
+          <label for="bridge-output-path">Dossier de sortie (chemin dans le container)</label>
+          <input type="text" id="bridge-output-path" placeholder="/output" />
+          <div class="hint">Doit correspondre au volume Docker partagé avec Plex.<br>Ex : <code>/output</code> → ajouter <code>/output/Movies</code> et <code>/output/Series</code> comme bibliothèques dans Plex.</div>
         </div>
         <div class="btn-row">
           <button class="btn btn-primary" id="btn-save-bridge">Enregistrer</button>

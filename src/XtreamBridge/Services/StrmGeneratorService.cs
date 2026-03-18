@@ -22,26 +22,28 @@ public sealed class StrmGeneratorService
     private readonly SyncStateRepository _repo;
     private readonly SnapshotService _snapshots;
     private readonly MetadataService _metadata;
-    private readonly AppSettings _settings;
-    private readonly string _outputRoot;
+    private readonly IOptionsMonitor<AppSettings> _opts;
     private readonly ILogger<StrmGeneratorService> _logger;
+
+    private AppSettings Settings => _opts.CurrentValue;
+    private string OutputRoot    => string.IsNullOrWhiteSpace(Settings.Bridge.OutputPath)
+                                        ? "/output"
+                                        : Settings.Bridge.OutputPath;
 
     public StrmGeneratorService(
         XtreamClient client,
         SyncStateRepository repo,
         SnapshotService snapshots,
         MetadataService metadata,
-        IOptions<AppSettings> opts,
-        IConfiguration configuration,
+        IOptionsMonitor<AppSettings> opts,
         ILogger<StrmGeneratorService> logger)
     {
-        _client     = client;
-        _repo       = repo;
-        _snapshots  = snapshots;
-        _metadata   = metadata;
-        _settings   = opts.Value;
-        _outputRoot = configuration["Paths:Output"] ?? "/output";
-        _logger     = logger;
+        _client    = client;
+        _repo      = repo;
+        _snapshots = snapshots;
+        _metadata  = metadata;
+        _opts      = opts;
+        _logger    = logger;
     }
 
     // ── Movies ────────────────────────────────────────────────────────────────
@@ -57,7 +59,7 @@ public sealed class StrmGeneratorService
         var state      = await _repo.LoadAsync(ct);
         var categories = await _client.GetVodCategoriesAsync(ct) ?? new();
         var catMap     = categories.ToDictionary(c => c.CategoryId, c => Sanitize(c.CategoryName));
-        var filter     = _settings.Sync.VodCategoryFilter;
+        var filter     = _opts.CurrentValue.Sync.VodCategoryFilter;
 
         // Gather all streams
         var allStreams = new List<XtreamVodStream>();
@@ -70,7 +72,7 @@ public sealed class StrmGeneratorService
 
         // Load previous snapshot and compute delta
         ContentSnapshot? prevSnapshot = null;
-        if (_settings.Sync.EnableSnapshotSync && !forceFullSync)
+        if (_opts.CurrentValue.Sync.EnableSnapshotSync && !forceFullSync)
             prevSnapshot = await _snapshots.LoadLatestAsync(ct);
 
         var delta   = DeltaCalculator.CalculateMovieDelta(allStreams, prevSnapshot);
@@ -94,31 +96,31 @@ public sealed class StrmGeneratorService
         // Build category map for stream lookup
         var streamCatMap = allStreams.ToDictionary(s => s.StreamId, s => catMap.TryGetValue(s.CategoryId ?? 0, out var cn) ? cn : "Uncategorized");
 
-        await Parallel.ForEachAsync(toProcess, new ParallelOptions { MaxDegreeOfParallelism = _settings.Sync.SyncParallelism, CancellationToken = ct },
+        await Parallel.ForEachAsync(toProcess, new ParallelOptions { MaxDegreeOfParallelism = _opts.CurrentValue.Sync.SyncParallelism, CancellationToken = ct },
             async (vod, innerCt) =>
             {
                 var catName = streamCatMap.TryGetValue(vod.StreamId, out var cn) ? cn : "Uncategorized";
                 progress.CurrentItem = vod.Name;
 
                 XtreamVodInfoResponse? info = null;
-                if (_settings.Sync.GenerateNfoFiles)
+                if (_opts.CurrentValue.Sync.GenerateNfoFiles)
                     info = await _client.GetVodInfoAsync(vod.StreamId, innerCt);
 
                 var details  = info?.Info;
                 var year     = ParseYear(details?.ReleaseDate);
                 var title    = Sanitize(details?.Name ?? vod.Name);
                 var fileName = year > 0 ? $"{title} ({year})" : title;
-                var dir      = Path.Combine(_outputRoot, "Movies", catName);
+                var dir      = Path.Combine(OutputRoot, "Movies", catName);
                 Directory.CreateDirectory(dir);
 
                 var url      = _client.BuildVodStreamUrl(vod.StreamId, vod.ContainerExtension);
                 var strmPath = Path.Combine(dir, $"{fileName}.strm");
                 WriteStrmIfNew(strmPath, url);
 
-                if (_settings.Sync.GenerateNfoFiles)
+                if (_opts.CurrentValue.Sync.GenerateNfoFiles)
                 {
                     TmdbResult? tmdb = null;
-                    if (_settings.Sync.EnableMetadataLookup && !string.IsNullOrEmpty(_settings.Sync.TmdbApiKey))
+                    if (_opts.CurrentValue.Sync.EnableMetadataLookup && !string.IsNullOrEmpty(_opts.CurrentValue.Sync.TmdbApiKey))
                         tmdb = await _metadata.SearchMovieAsync(vod.Name, year, innerCt);
 
                     var nfoPath = Path.Combine(dir, $"{fileName}.nfo");
@@ -131,14 +133,14 @@ public sealed class StrmGeneratorService
             });
 
         // Orphan cleanup
-        if (_settings.Sync.CleanupOrphans && (isFirst || delta.RemovedMovies.Count > 0))
+        if (_opts.CurrentValue.Sync.CleanupOrphans && (isFirst || delta.RemovedMovies.Count > 0))
         {
             var currentIds = new HashSet<int>(allStreams.Select(s => s.StreamId));
             removed = await CleanupMovieOrphansAsync(currentIds, allStreams.Count, ct);
         }
 
         // Save new snapshot
-        if (_settings.Sync.EnableSnapshotSync)
+        if (_opts.CurrentValue.Sync.EnableSnapshotSync)
         {
             var snap = prevSnapshot ?? new ContentSnapshot();
             snap.TakenAt = DateTimeOffset.UtcNow;
@@ -164,7 +166,7 @@ public sealed class StrmGeneratorService
         var state      = await _repo.LoadAsync(ct);
         var categories = await _client.GetSeriesCategoriesAsync(ct) ?? new();
         var catMap     = categories.ToDictionary(c => c.CategoryId, c => Sanitize(c.CategoryName));
-        var filter     = _settings.Sync.SeriesCategoryFilter;
+        var filter     = _opts.CurrentValue.Sync.SeriesCategoryFilter;
 
         var allSeries = new List<XtreamSeries>();
         foreach (var catId in GetCategoryIds(filter, categories.Select(c => c.CategoryId)))
@@ -175,7 +177,7 @@ public sealed class StrmGeneratorService
         }
 
         ContentSnapshot? prevSnapshot = null;
-        if (_settings.Sync.EnableSnapshotSync && !forceFullSync)
+        if (_opts.CurrentValue.Sync.EnableSnapshotSync && !forceFullSync)
             prevSnapshot = await _snapshots.LoadLatestAsync(ct);
 
         var delta   = DeltaCalculator.CalculateSeriesDelta(allSeries, prevSnapshot);
@@ -203,7 +205,7 @@ public sealed class StrmGeneratorService
             progress.CurrentItem = series.Name;
 
             var catName   = seriesCatMap.TryGetValue(series.SeriesId, out var cn) ? cn : "Uncategorized";
-            var seriesDir = Path.Combine(_outputRoot, "Series", catName, Sanitize(series.Name));
+            var seriesDir = Path.Combine(OutputRoot, "Series", catName, Sanitize(series.Name));
             Directory.CreateDirectory(seriesDir);
 
             var info = await _client.GetSeriesStreamsBySeriesAsync(series.SeriesId, ct);
@@ -213,16 +215,16 @@ public sealed class StrmGeneratorService
                 continue;
             }
 
-            if (_settings.Sync.GenerateNfoFiles)
+            if (_opts.CurrentValue.Sync.GenerateNfoFiles)
             {
                 TmdbResult? tmdb = null;
-                if (_settings.Sync.EnableMetadataLookup && !string.IsNullOrEmpty(_settings.Sync.TmdbApiKey))
+                if (_opts.CurrentValue.Sync.EnableMetadataLookup && !string.IsNullOrEmpty(_opts.CurrentValue.Sync.TmdbApiKey))
                     tmdb = await _metadata.SearchSeriesAsync(series.Name, 0, ct);
 
                 await NfoWriter.WriteSeriesNfoAsync(Path.Combine(seriesDir, "tvshow.nfo"), series, tmdb);
             }
 
-            var sem = new SemaphoreSlim(_settings.Sync.SyncParallelism, _settings.Sync.SyncParallelism);
+            var sem = new SemaphoreSlim(_opts.CurrentValue.Sync.SyncParallelism, _opts.CurrentValue.Sync.SyncParallelism);
             var epTasks = info.Episodes
                 .SelectMany(kv => kv.Value)
                 .Select(async ep =>
@@ -234,7 +236,7 @@ public sealed class StrmGeneratorService
                     var url    = _client.BuildSeriesStreamUrl(ep.EpisodeId, ep.ContainerExtension);
                     WriteStrmIfNew(Path.Combine(seasonDir, $"{epFile}.strm"), url);
 
-                    if (_settings.Sync.GenerateNfoFiles)
+                    if (_opts.CurrentValue.Sync.GenerateNfoFiles)
                         await NfoWriter.WriteEpisodeNfoAsync(Path.Combine(seasonDir, $"{epFile}.nfo"), ep, series.Name);
                 });
 
@@ -246,14 +248,14 @@ public sealed class StrmGeneratorService
         }
 
         // Orphan cleanup
-        if (_settings.Sync.CleanupOrphans)
+        if (_opts.CurrentValue.Sync.CleanupOrphans)
         {
             var currentIds = new HashSet<int>(allSeries.Select(s => s.SeriesId));
             removed = CleanupSeriesOrphans(currentIds, allSeries.Count);
         }
 
         // Update snapshot
-        if (_settings.Sync.EnableSnapshotSync)
+        if (_opts.CurrentValue.Sync.EnableSnapshotSync)
         {
             var snap = prevSnapshot ?? new ContentSnapshot();
             snap.TakenAt = DateTimeOffset.UtcNow;
@@ -273,7 +275,7 @@ public sealed class StrmGeneratorService
         int totalCount,
         CancellationToken ct)
     {
-        var moviesRoot = Path.Combine(_outputRoot, "Movies");
+        var moviesRoot = Path.Combine(OutputRoot, "Movies");
         if (!Directory.Exists(moviesRoot)) return 0;
 
         var strmFiles = Directory.GetFiles(moviesRoot, "*.strm", SearchOption.AllDirectories);
@@ -295,11 +297,11 @@ public sealed class StrmGeneratorService
         if (toRemove.Count == 0) return 0;
 
         var percent = totalCount > 0 ? (double)toRemove.Count / totalCount : 1.0;
-        if (percent > _settings.Sync.OrphanSafetyThreshold)
+        if (percent > _opts.CurrentValue.Sync.OrphanSafetyThreshold)
         {
             _logger.LogWarning(
                 "Orphan cleanup aborted — would remove {Count} files ({Pct:P0}), exceeds {Threshold:P0} threshold",
-                toRemove.Count, percent, _settings.Sync.OrphanSafetyThreshold);
+                toRemove.Count, percent, _opts.CurrentValue.Sync.OrphanSafetyThreshold);
             return 0;
         }
 
@@ -320,7 +322,7 @@ public sealed class StrmGeneratorService
 
     private int CleanupSeriesOrphans(HashSet<int> currentIds, int totalCount)
     {
-        var seriesRoot = Path.Combine(_outputRoot, "Series");
+        var seriesRoot = Path.Combine(OutputRoot, "Series");
         if (!Directory.Exists(seriesRoot)) return 0;
         return 0; // Series orphan cleanup: more complex, not implemented for safety
     }

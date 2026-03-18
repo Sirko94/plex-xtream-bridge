@@ -48,8 +48,9 @@ async function loadConfig() {
     document.getElementById('bridge-url').value    = cfg.bridge?.publicBaseUrl ?? '';
     document.getElementById('bridge-name').value   = cfg.bridge?.deviceName    ?? 'XtreamBridge';
     document.getElementById('bridge-tuners').value = cfg.bridge?.tunerCount    ?? 6;
-    document.getElementById('bridge-livetv').checked = cfg.bridge?.enableLiveTv ?? true;
-    document.getElementById('bridge-strm').checked   = cfg.bridge?.enableStrmGeneration ?? true;
+    document.getElementById('bridge-livetv').checked    = cfg.bridge?.enableLiveTv ?? true;
+    document.getElementById('bridge-strm').checked      = cfg.bridge?.enableStrmGeneration ?? true;
+    document.getElementById('bridge-output-path').value = cfg.bridge?.outputPath ?? '/output';
 
     // Sync
     const s = cfg.sync ?? {};
@@ -62,12 +63,12 @@ async function loadConfig() {
     document.getElementById('sync-cleanup').checked   = s.cleanupOrphans ?? true;
     document.getElementById('sync-clean-names').checked = s.enableChannelNameCleaning ?? true;
     document.getElementById('sync-ext').value         = s.liveStreamExtension ?? 'ts';
-    document.getElementById('sync-parallelism').value = s.syncParallelism ?? 10;
+    document.getElementById('sync-parallelism').value = s.syncParallelism ?? 3;
     document.getElementById('sync-threshold').value   = Math.round((s.orphanSafetyThreshold ?? 0.20) * 100);
     document.getElementById('sync-remove-terms').value = s.channelRemoveTerms ?? '';
-    document.getElementById('sync-delay').value       = s.requestDelayMs ?? 50;
-    document.getElementById('sync-retries').value     = s.maxRetries ?? 3;
-    document.getElementById('sync-retry-delay').value = s.retryDelayMs ?? 1000;
+    document.getElementById('sync-delay').value       = s.requestDelayMs ?? 800;
+    document.getElementById('sync-retries').value     = s.maxRetries ?? 5;
+    document.getElementById('sync-retry-delay').value = s.retryDelayMs ?? 10000;
 
     // Snapshot / TMDb
     document.getElementById('sync-snapshot').checked     = s.enableSnapshotSync ?? true;
@@ -106,6 +107,7 @@ function collectConfig() {
       userAgent:             document.getElementById('server-ua').value.trim(),
       enableLiveTv:          document.getElementById('bridge-livetv').checked,
       enableStrmGeneration:  document.getElementById('bridge-strm').checked,
+      outputPath:            document.getElementById('bridge-output-path').value.trim() || '/output',
       deviceId: ''
     },
     sync: {

@@ -44,6 +44,12 @@ public sealed class BridgeSettings
 
     /// <summary>Enable STRM + NFO file generation for Movies/Series</summary>
     public bool EnableStrmGeneration { get; set; } = true;
+
+    /// <summary>
+    /// Root folder where .strm and .nfo files are written.
+    /// Must match the Plex library path. Default: /output (mapped via Docker volume).
+    /// </summary>
+    public string OutputPath { get; set; } = "/output";
 }
 
 public sealed class SyncSettings
@@ -89,10 +95,10 @@ public sealed class SyncSettings
     public string ChannelOverrides { get; set; } = string.Empty;
 
     // ── Parallelism + rate limiting ───────────────────────────────────────
-    public int SyncParallelism { get; set; } = 10;
-    public int RequestDelayMs { get; set; } = 50;
-    public int MaxRetries { get; set; } = 3;
-    public int RetryDelayMs { get; set; } = 1000;
+    public int SyncParallelism { get; set; } = 3;
+    public int RequestDelayMs  { get; set; } = 800;
+    public int MaxRetries      { get; set; } = 5;
+    public int RetryDelayMs    { get; set; } = 10000;
 
     // ── Orphan cleanup ────────────────────────────────────────────────────
     /// <summary>Delete .strm files that no longer exist in the provider</summary>

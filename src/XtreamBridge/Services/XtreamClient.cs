@@ -24,10 +24,10 @@ public sealed class XtreamClient
     // API base URL — may be updated after auth from server_info (e.g. different port)
     private string _apiBaseUrl = string.Empty;
 
-    // Retry config (overridable by tests)
-    public int RequestDelayMs { get; set; } = 50;
-    public int MaxRetries { get; set; } = 3;
-    public int RetryDelayMs { get; set; } = 1000;
+    // Retry config — reads live from AppSettings so UI changes take effect immediately
+    private int RequestDelayMs => Math.Max(_settings.Sync.RequestDelayMs, 0);
+    private int MaxRetries     => Math.Clamp(_settings.Sync.MaxRetries, 0, 20);
+    private int RetryDelayMs   => Math.Max(_settings.Sync.RetryDelayMs, 100);
 
     private readonly JsonSerializerSettings _json;
 
