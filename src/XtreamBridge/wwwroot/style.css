@@ -331,6 +331,86 @@ textarea { resize: vertical; font-family: monospace; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .spinning { animation: spin .6s linear infinite; display: inline-block; }
 
+/* ── Progress bar ────────────────────────────────────────────────────────── */
+.progress-phase {
+  font-size: .88rem;
+  color: var(--text-muted);
+  margin-bottom: .5rem;
+}
+.progress-bar-wrap {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  height: 10px;
+  overflow: hidden;
+  margin-bottom: .4rem;
+}
+.progress-bar {
+  height: 100%;
+  background: var(--primary);
+  border-radius: 999px;
+  transition: width .4s ease;
+  width: 0%;
+}
+.progress-meta {
+  display: flex;
+  gap: 1rem;
+  font-size: .82rem;
+  color: var(--text-muted);
+}
+.text-muted { color: var(--text-muted); }
+
+/* ── Pulse dot (running indicator) ──────────────────────────────────────── */
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+.pulse-dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+  animation: pulse 1.2s ease infinite;
+  margin-right: .4rem;
+  vertical-align: middle;
+}
+
+/* ── Sync results grid ───────────────────────────────────────────────────── */
+.sync-results-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: .8rem;
+}
+.sync-result-block {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: .7rem .9rem;
+}
+.sync-result-title {
+  font-size: .78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: .4rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.sync-result-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .3rem;
+}
+
+/* ── Badges ──────────────────────────────────────────────────────────────── */
+.badge {
+  display: inline-block;
+  padding: .15rem .5rem;
+  border-radius: 999px;
+  font-size: .78rem;
+  font-weight: 500;
+}
+.badge-green  { background: rgba(34,197,94,.12);  color: var(--success); }
+.badge-red    { background: rgba(239,68,68,.12);  color: var(--error); }
+.badge-blue   { background: rgba(56,189,248,.12); color: var(--blue); }
+.badge-muted  { background: var(--surface2); color: var(--text-muted); }
+
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 @media (max-width: 680px) {
   .form-row { grid-template-columns: 1fr; }

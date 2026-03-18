@@ -37,7 +37,7 @@
       </a></li>
     </ul>
     <div class="sidebar-footer">
-      <span id="version">v1.0.0</span>
+      <span id="version">v2.0.0</span>
     </div>
   </nav>
 
@@ -46,6 +46,24 @@
     <!-- ── Tableau de bord ────────────────────────────────────────────────── -->
     <section id="status" class="section active">
       <h1>Tableau de bord</h1>
+
+      <!-- Sync progress (shown only when running) -->
+      <div id="sync-progress-card" class="card hidden">
+        <h2>
+          <span class="pulse-dot"></span>
+          Synchronisation en cours…
+        </h2>
+        <div class="progress-phase" id="progress-phase-label">Initialisation…</div>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar" id="progress-bar"></div>
+        </div>
+        <div class="progress-meta">
+          <span id="progress-count">0 / 0</span>
+          <span id="progress-item" class="text-muted"></span>
+        </div>
+      </div>
+
+      <!-- Stats cards -->
       <div class="stats-grid">
         <div class="stat-card" id="stat-sync">
           <div class="stat-icon green">
@@ -85,18 +103,54 @@
         </div>
       </div>
 
+      <!-- Last sync results -->
+      <div class="card" id="last-sync-results-card">
+        <h2>Résultats de la dernière sync</h2>
+        <div class="sync-results-grid">
+          <div class="sync-result-block">
+            <div class="sync-result-title">Films</div>
+            <div class="sync-result-row">
+              <span class="badge badge-green" id="res-movies-created">0 créés</span>
+              <span class="badge badge-muted" id="res-movies-skipped">0 ignorés</span>
+              <span class="badge badge-red" id="res-movies-removed">0 supprimés</span>
+            </div>
+          </div>
+          <div class="sync-result-block">
+            <div class="sync-result-title">Séries</div>
+            <div class="sync-result-row">
+              <span class="badge badge-green" id="res-series-created">0 créées</span>
+              <span class="badge badge-muted" id="res-series-skipped">0 ignorées</span>
+              <span class="badge badge-red" id="res-series-removed">0 supprimées</span>
+            </div>
+          </div>
+          <div class="sync-result-block">
+            <div class="sync-result-title">Live TV</div>
+            <div class="sync-result-row">
+              <span class="badge badge-blue" id="res-live-channels">0 chaînes</span>
+            </div>
+          </div>
+        </div>
+        <div id="last-error-msg" class="message error hidden"></div>
+      </div>
+
+      <!-- Quick actions -->
       <div class="card">
         <h2>Actions rapides</h2>
         <div class="btn-row">
           <button class="btn btn-primary" id="btn-sync">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
-            Synchroniser maintenant
+            Synchroniser
           </button>
-          <button class="btn btn-secondary" id="btn-refresh-status">Actualiser le statut</button>
+          <button class="btn btn-secondary" id="btn-sync-full">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+            Synchronisation complète
+          </button>
+          <button class="btn btn-secondary" id="btn-refresh-status">Actualiser</button>
         </div>
         <div id="sync-message" class="message hidden"></div>
       </div>
 
+      <!-- Plex integration -->
       <div class="card">
         <h2>Intégration Plex</h2>
         <div class="code-block">
@@ -196,6 +250,39 @@
     <!-- ── Synchronisation ────────────────────────────────────────────────── -->
     <section id="sync" class="section">
       <h1>Synchronisation</h1>
+
+      <!-- Snapshot info -->
+      <div class="card">
+        <h2>Snapshots (sync incrémentale)</h2>
+        <div id="snapshot-info" class="hint">Chargement…</div>
+        <div class="toggles" style="margin-top:.8rem">
+          <div class="form-group toggle-group">
+            <label class="toggle"><input type="checkbox" id="sync-snapshot" checked /><span class="slider"></span></label>
+            <div><div class="toggle-label">Activer la sync incrémentale par snapshot</div><div class="hint">Seuls les nouveaux contenus ou modifiés sont traités à chaque sync</div></div>
+          </div>
+        </div>
+        <div class="btn-row" style="margin-top:.6rem">
+          <button class="btn btn-secondary btn-sm" id="btn-delete-snapshots">Supprimer les snapshots</button>
+          <span class="hint">(force une sync complète au prochain lancement)</span>
+        </div>
+        <div id="snapshot-message" class="message hidden"></div>
+      </div>
+
+      <!-- Metadata lookup -->
+      <div class="card">
+        <h2>Enrichissement de métadonnées (TMDb)</h2>
+        <div class="form-group toggle-group">
+          <label class="toggle"><input type="checkbox" id="sync-tmdb-enabled" /><span class="slider"></span></label>
+          <div><div class="toggle-label">Activer la recherche TMDb</div><div class="hint">Enrichit les fichiers .nfo avec données TMDb (affiches, synopsis…)</div></div>
+        </div>
+        <div class="form-group" id="tmdb-key-group">
+          <label for="sync-tmdb-key">Clé API TMDb</label>
+          <input type="text" id="sync-tmdb-key" placeholder="Votre clé API v3 de themoviedb.org" />
+          <span class="hint">Obtenez une clé gratuite sur <a href="https://www.themoviedb.org/settings/api" target="_blank" style="color:var(--primary)">themoviedb.org</a></span>
+        </div>
+      </div>
+
+      <!-- Schedule -->
       <div class="card">
         <h2>Planification</h2>
         <div class="form-row">
@@ -221,6 +308,7 @@
         </div>
       </div>
 
+      <!-- Content options -->
       <div class="card">
         <h2>Contenu</h2>
         <div class="toggles">
@@ -265,6 +353,7 @@
         </div>
       </div>
 
+      <!-- Rate limits -->
       <div class="card">
         <h2>Limites de taux</h2>
         <div class="form-row">

@@ -69,6 +69,11 @@ async function loadConfig() {
     document.getElementById('sync-retries').value     = s.maxRetries ?? 3;
     document.getElementById('sync-retry-delay').value = s.retryDelayMs ?? 1000;
 
+    // Snapshot / TMDb
+    document.getElementById('sync-snapshot').checked     = s.enableSnapshotSync ?? true;
+    document.getElementById('sync-tmdb-enabled').checked = s.enableMetadataLookup ?? false;
+    document.getElementById('sync-tmdb-key').value       = s.tmdbApiKey ?? '';
+
     // Live — category filters
     _selectedLive   = s.liveCategoryFilter   ?? [];
     _selectedVod    = s.vodCategoryFilter    ?? [];
@@ -101,7 +106,7 @@ function collectConfig() {
       userAgent:             document.getElementById('server-ua').value.trim(),
       enableLiveTv:          document.getElementById('bridge-livetv').checked,
       enableStrmGeneration:  document.getElementById('bridge-strm').checked,
-      deviceId: ''  // preserved server-side
+      deviceId: ''
     },
     sync: {
       scheduleType:              document.getElementById('sync-schedule').value,
@@ -122,7 +127,10 @@ function collectConfig() {
       liveCategoryFilter:        _selectedLive,
       vodCategoryFilter:         _selectedVod,
       seriesCategoryFilter:      _selectedSeries,
-      channelOverrides:          document.getElementById('channel-overrides').value
+      channelOverrides:          document.getElementById('channel-overrides').value,
+      enableSnapshotSync:        document.getElementById('sync-snapshot').checked,
+      enableMetadataLookup:      document.getElementById('sync-tmdb-enabled').checked,
+      tmdbApiKey:                document.getElementById('sync-tmdb-key').value.trim()
     }
   };
 }
@@ -141,28 +149,107 @@ async function loadStatus() {
   }
 }
 
+// ── Sync progress polling ─────────────────────────────────────────────────────
+const PHASE_LABELS = {
+  idle:    'En attente',
+  auth:    'Authentification…',
+  live:    'Live TV…',
+  movies:  'Films…',
+  series:  'Séries…',
+  epg:     'EPG…',
+  done:    'Terminé'
+};
+
+let _pollInterval = null;
+
+async function loadSyncProgress() {
+  try {
+    const p = await api('GET', '/sync/status');
+    const card = document.getElementById('sync-progress-card');
+
+    if (p.isRunning) {
+      card.classList.remove('hidden');
+
+      const label = PHASE_LABELS[p.phase] ?? p.phase;
+      document.getElementById('progress-phase-label').textContent = label;
+
+      const pct = p.progressPercent ?? 0;
+      document.getElementById('progress-bar').style.width = pct + '%';
+
+      const total = p.totalItems > 0 ? p.totalItems : '?';
+      document.getElementById('progress-count').textContent = `${p.itemsProcessed} / ${total}`;
+      document.getElementById('progress-item').textContent = p.currentItem ?? '';
+
+      // Start polling if not already polling
+      if (!_pollInterval) {
+        _pollInterval = setInterval(loadSyncProgress, 2000);
+      }
+    } else {
+      // Sync finished
+      card.classList.add('hidden');
+      if (_pollInterval) {
+        clearInterval(_pollInterval);
+        _pollInterval = null;
+      }
+
+      // Update results
+      document.getElementById('res-movies-created').textContent = `${p.moviesCreated} créés`;
+      document.getElementById('res-movies-skipped').textContent = `${p.moviesSkipped} ignorés`;
+      document.getElementById('res-movies-removed').textContent = `${p.moviesRemoved} supprimés`;
+      document.getElementById('res-series-created').textContent = `${p.seriesCreated} créées`;
+      document.getElementById('res-series-skipped').textContent = `${p.seriesSkipped} ignorées`;
+      document.getElementById('res-series-removed').textContent = `${p.seriesRemoved} supprimées`;
+      document.getElementById('res-live-channels').textContent = `${p.liveChannels} chaînes`;
+
+      const errEl = document.getElementById('last-error-msg');
+      if (p.lastError) {
+        errEl.textContent = `Erreur : ${p.lastError}`;
+        errEl.classList.remove('hidden');
+      } else {
+        errEl.classList.add('hidden');
+      }
+
+      // Refresh status counters
+      loadStatus();
+    }
+  } catch (err) {
+    console.debug('loadSyncProgress:', err);
+  }
+}
+
 // ── Button handlers ───────────────────────────────────────────────────────────
 
-// Sync now
+// Sync (incremental)
 document.getElementById('btn-sync').addEventListener('click', async () => {
-  const btn = document.getElementById('btn-sync');
+  await triggerSync(false);
+});
+
+// Sync (full)
+document.getElementById('btn-sync-full').addEventListener('click', async () => {
+  await triggerSync(true);
+});
+
+async function triggerSync(full) {
+  const btn = document.getElementById(full ? 'btn-sync-full' : 'btn-sync');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinning">↻</span> Synchronisation…';
   try {
-    await api('POST', '/sync/trigger');
-    showMessage('sync-message', 'Synchronisation démarrée en arrière-plan.', 'info');
-    setTimeout(loadStatus, 3000);
+    await api('POST', full ? '/sync/trigger?full=true' : '/sync/trigger');
+    showMessage('sync-message', full ? 'Synchronisation complète démarrée.' : 'Synchronisation démarrée.', 'info');
+    // Start polling immediately
+    if (_pollInterval) clearInterval(_pollInterval);
+    _pollInterval = setInterval(loadSyncProgress, 2000);
+    loadSyncProgress();
   } catch (e) {
     showMessage('sync-message', 'Erreur : ' + e.message, 'error');
   } finally {
     btn.disabled = false;
-    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <polyline points="23 4 23 10 17 10"/><path d="M1 14l4.64 4.36A9 9 0 0020.49 15"/>
-    </svg> Synchroniser maintenant`;
   }
-});
+}
 
-document.getElementById('btn-refresh-status').addEventListener('click', loadStatus);
+document.getElementById('btn-refresh-status').addEventListener('click', () => {
+  loadStatus();
+  loadSyncProgress();
+});
 
 // Test connection
 document.getElementById('btn-test').addEventListener('click', async () => {
@@ -185,25 +272,47 @@ document.getElementById('btn-test').addEventListener('click', async () => {
   }
 });
 
-// Save server section
+// Save buttons
 document.getElementById('btn-save-server').addEventListener('click', () => saveConfig('test-result'));
-
-// Save bridge section
 document.getElementById('btn-save-bridge').addEventListener('click', () => saveConfig('bridge-message'));
-
-// Save sync section
 document.getElementById('btn-save-sync').addEventListener('click', () => saveConfig('sync-save-message'));
-
-// Save live TV section
 document.getElementById('btn-save-live').addEventListener('click', () => saveConfig('live-message'));
 
 async function saveConfig(feedbackId) {
   try {
     await api('POST', '/config', collectConfig());
     showMessage(feedbackId, 'Configuration enregistrée ✓', 'success');
-    loadConfig(); // reload to confirm
+    loadConfig();
   } catch (e) {
     showMessage(feedbackId, 'Erreur : ' + e.message, 'error');
+  }
+}
+
+// Delete snapshots
+document.getElementById('btn-delete-snapshots').addEventListener('click', async () => {
+  if (!confirm('Supprimer tous les snapshots ? La prochaine sync sera complète.')) return;
+  try {
+    await api('DELETE', '/snapshots');
+    showMessage('snapshot-message', 'Snapshots supprimés ✓', 'success');
+    loadSnapshots();
+  } catch (e) {
+    showMessage('snapshot-message', 'Erreur : ' + e.message, 'error');
+  }
+});
+
+async function loadSnapshots() {
+  try {
+    const list = await api('GET', '/snapshots');
+    const el = document.getElementById('snapshot-info');
+    if (!list || list.length === 0) {
+      el.textContent = 'Aucun snapshot — la prochaine sync sera complète.';
+    } else {
+      const latest = list[0];
+      const date = new Date(latest.date).toLocaleString('fr-FR');
+      el.textContent = `${list.length} snapshot(s) — dernier : ${date} (${(latest.sizeBytes / 1024).toFixed(0)} Ko)`;
+    }
+  } catch (e) {
+    document.getElementById('snapshot-info').textContent = 'Impossible de charger les snapshots.';
   }
 }
 
@@ -284,4 +393,10 @@ document.getElementById('btn-load-series').addEventListener('click', async () =>
 // ── Init ──────────────────────────────────────────────────────────────────────
 loadConfig();
 loadStatus();
-setInterval(loadStatus, 30_000); // auto-refresh status every 30s
+loadSyncProgress();
+loadSnapshots();
+
+// Refresh status every 30s when idle; progress polling handled separately
+setInterval(() => {
+  if (!_pollInterval) loadStatus();
+}, 30_000);

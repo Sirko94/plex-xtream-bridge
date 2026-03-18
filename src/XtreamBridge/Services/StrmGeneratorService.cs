@@ -8,6 +8,8 @@ namespace XtreamBridge.Services;
 
 /// <summary>
 /// Generates .strm and .nfo sidecar files under /output for Plex to pick up.
+/// Supports snapshot-based incremental sync, orphan cleanup with safety threshold,
+/// and optional TMDb metadata enrichment.
 ///
 /// Layout:
 ///   /output/Movies/{Category}/{Title} ({Year}).strm|.nfo
@@ -18,6 +20,8 @@ public sealed class StrmGeneratorService
 {
     private readonly XtreamClient _client;
     private readonly SyncStateRepository _repo;
+    private readonly SnapshotService _snapshots;
+    private readonly MetadataService _metadata;
     private readonly AppSettings _settings;
     private readonly string _outputRoot;
     private readonly ILogger<StrmGeneratorService> _logger;
@@ -25,188 +29,317 @@ public sealed class StrmGeneratorService
     public StrmGeneratorService(
         XtreamClient client,
         SyncStateRepository repo,
+        SnapshotService snapshots,
+        MetadataService metadata,
         IOptions<AppSettings> opts,
         IConfiguration configuration,
         ILogger<StrmGeneratorService> logger)
     {
-        _client = client;
-        _repo = repo;
-        _settings = opts.Value;
+        _client     = client;
+        _repo       = repo;
+        _snapshots  = snapshots;
+        _metadata   = metadata;
+        _settings   = opts.Value;
         _outputRoot = configuration["Paths:Output"] ?? "/output";
-        _logger = logger;
+        _logger     = logger;
     }
 
     // ── Movies ────────────────────────────────────────────────────────────────
 
-    public async Task SyncMoviesAsync(CancellationToken ct)
+    public async Task<(int Created, int Skipped, int Removed)> SyncMoviesAsync(
+        SyncProgress progress,
+        CancellationToken ct,
+        bool forceFullSync = false)
     {
-        _logger.LogInformation("VOD sync started…");
-        var state = await _repo.LoadAsync(ct);
+        _logger.LogInformation("VOD sync started (force={Force})…", forceFullSync);
+        progress.Phase = "movies";
 
+        var state      = await _repo.LoadAsync(ct);
         var categories = await _client.GetVodCategoriesAsync(ct) ?? new();
-        var catMap = categories.ToDictionary(c => c.CategoryId, c => Sanitize(c.CategoryName));
-        var filter = _settings.Sync.VodCategoryFilter;
+        var catMap     = categories.ToDictionary(c => c.CategoryId, c => Sanitize(c.CategoryName));
+        var filter     = _settings.Sync.VodCategoryFilter;
 
-        int added = 0;
+        // Gather all streams
+        var allStreams = new List<XtreamVodStream>();
         foreach (var catId in GetCategoryIds(filter, categories.Select(c => c.CategoryId)))
         {
             if (ct.IsCancellationRequested) break;
             var streams = await _client.GetVodStreamsByCategoryAsync(catId, ct) ?? new();
-            var catName = catMap.TryGetValue(catId, out var cn) ? cn : "Uncategorized";
+            allStreams.AddRange(streams);
+        }
 
-            foreach (var vod in streams)
+        // Load previous snapshot and compute delta
+        ContentSnapshot? prevSnapshot = null;
+        if (_settings.Sync.EnableSnapshotSync && !forceFullSync)
+            prevSnapshot = await _snapshots.LoadLatestAsync(ct);
+
+        var delta   = DeltaCalculator.CalculateMovieDelta(allStreams, prevSnapshot);
+        var isFirst = prevSnapshot is null || forceFullSync;
+
+        // Which streams need processing?
+        var toProcess = isFirst
+            ? allStreams
+            : delta.NewMovies.Concat(delta.ModifiedMovies)
+                             .Select(snap => allStreams.FirstOrDefault(s => s.StreamId == snap.StreamId))
+                             .Where(s => s is not null)
+                             .Select(s => s!)
+                             .ToList();
+
+        progress.TotalItems     = toProcess.Count;
+        progress.ItemsProcessed = 0;
+
+        int created = 0, skipped = 0, removed = 0;
+        int processedCount = 0;
+
+        // Build category map for stream lookup
+        var streamCatMap = allStreams.ToDictionary(s => s.StreamId, s => catMap.TryGetValue(s.CategoryId ?? 0, out var cn) ? cn : "Uncategorized");
+
+        await Parallel.ForEachAsync(toProcess, new ParallelOptions { MaxDegreeOfParallelism = _settings.Sync.SyncParallelism, CancellationToken = ct },
+            async (vod, innerCt) =>
             {
-                if (ct.IsCancellationRequested) break;
-                if (state.SyncedVodIds.Contains(vod.StreamId)) continue;
+                var catName = streamCatMap.TryGetValue(vod.StreamId, out var cn) ? cn : "Uncategorized";
+                progress.CurrentItem = vod.Name;
 
                 XtreamVodInfoResponse? info = null;
                 if (_settings.Sync.GenerateNfoFiles)
-                    info = await _client.GetVodInfoAsync(vod.StreamId, ct);
+                    info = await _client.GetVodInfoAsync(vod.StreamId, innerCt);
 
-                var details = info?.Info;
-                var year    = ParseYear(details?.ReleaseDate);
-                var title   = Sanitize(details?.Name ?? vod.Name);
+                var details  = info?.Info;
+                var year     = ParseYear(details?.ReleaseDate);
+                var title    = Sanitize(details?.Name ?? vod.Name);
                 var fileName = year > 0 ? $"{title} ({year})" : title;
-                var dir = Path.Combine(_outputRoot, "Movies", catName);
+                var dir      = Path.Combine(_outputRoot, "Movies", catName);
                 Directory.CreateDirectory(dir);
 
-                var url = _client.BuildVodStreamUrl(vod.StreamId, vod.ContainerExtension);
-                WriteStrm(Path.Combine(dir, $"{fileName}.strm"), url);
+                var url      = _client.BuildVodStreamUrl(vod.StreamId, vod.ContainerExtension);
+                var strmPath = Path.Combine(dir, $"{fileName}.strm");
+                WriteStrmIfNew(strmPath, url);
 
-                if (_settings.Sync.GenerateNfoFiles && details is not null)
-                    WriteMovieNfo(Path.Combine(dir, $"{fileName}.nfo"), vod, details, year, title);
+                if (_settings.Sync.GenerateNfoFiles)
+                {
+                    TmdbResult? tmdb = null;
+                    if (_settings.Sync.EnableMetadataLookup && !string.IsNullOrEmpty(_settings.Sync.TmdbApiKey))
+                        tmdb = await _metadata.SearchMovieAsync(vod.Name, year, innerCt);
+
+                    var nfoPath = Path.Combine(dir, $"{fileName}.nfo");
+                    await NfoWriter.WriteMovieNfoAsync(nfoPath, vod, details, tmdb);
+                }
 
                 state.SyncedVodIds.Add(vod.StreamId);
-                added++;
-                if (added % 50 == 0) await _repo.SaveAsync(state, ct);
-            }
+                Interlocked.Increment(ref created);
+                progress.ItemsProcessed = Interlocked.Increment(ref processedCount);
+            });
+
+        // Orphan cleanup
+        if (_settings.Sync.CleanupOrphans && (isFirst || delta.RemovedMovies.Count > 0))
+        {
+            var currentIds = new HashSet<int>(allStreams.Select(s => s.StreamId));
+            removed = await CleanupMovieOrphansAsync(currentIds, allStreams.Count, ct);
+        }
+
+        // Save new snapshot
+        if (_settings.Sync.EnableSnapshotSync)
+        {
+            var snap = prevSnapshot ?? new ContentSnapshot();
+            snap.TakenAt = DateTimeOffset.UtcNow;
+            snap.Movies  = DeltaCalculator.BuildMovieSnapshot(allStreams);
+            await _snapshots.SaveAsync(snap, ct);
         }
 
         await _repo.SaveAsync(state, ct);
-        _logger.LogInformation("VOD sync complete: {N} new items", added);
+        _logger.LogInformation("VOD sync complete: {Created} created, {Skipped} skipped, {Removed} removed", created, skipped, removed);
+        return (created, skipped, removed);
     }
 
     // ── Series ────────────────────────────────────────────────────────────────
 
-    public async Task SyncSeriesAsync(CancellationToken ct)
+    public async Task<(int Created, int Skipped, int Removed)> SyncSeriesAsync(
+        SyncProgress progress,
+        CancellationToken ct,
+        bool forceFullSync = false)
     {
-        _logger.LogInformation("Series sync started…");
-        var state = await _repo.LoadAsync(ct);
+        _logger.LogInformation("Series sync started (force={Force})…", forceFullSync);
+        progress.Phase = "series";
 
+        var state      = await _repo.LoadAsync(ct);
         var categories = await _client.GetSeriesCategoriesAsync(ct) ?? new();
-        var catMap = categories.ToDictionary(c => c.CategoryId, c => Sanitize(c.CategoryName));
-        var filter = _settings.Sync.SeriesCategoryFilter;
+        var catMap     = categories.ToDictionary(c => c.CategoryId, c => Sanitize(c.CategoryName));
+        var filter     = _settings.Sync.SeriesCategoryFilter;
 
-        int added = 0;
+        var allSeries = new List<XtreamSeries>();
         foreach (var catId in GetCategoryIds(filter, categories.Select(c => c.CategoryId)))
         {
             if (ct.IsCancellationRequested) break;
             var seriesList = await _client.GetSeriesByCategoryAsync(catId, ct) ?? new();
-            var catName = catMap.TryGetValue(catId, out var cn) ? cn : "Uncategorized";
+            allSeries.AddRange(seriesList);
+        }
 
-            foreach (var series in seriesList)
+        ContentSnapshot? prevSnapshot = null;
+        if (_settings.Sync.EnableSnapshotSync && !forceFullSync)
+            prevSnapshot = await _snapshots.LoadLatestAsync(ct);
+
+        var delta   = DeltaCalculator.CalculateSeriesDelta(allSeries, prevSnapshot);
+        var isFirst = prevSnapshot?.Series.Count == 0 || forceFullSync;
+
+        var toProcess = isFirst
+            ? allSeries
+            : delta.NewSeries.Concat(delta.ModifiedSeries)
+                             .Select(snap => allSeries.FirstOrDefault(s => s.SeriesId == snap.SeriesId))
+                             .Where(s => s is not null)
+                             .Select(s => s!)
+                             .ToList();
+
+        progress.TotalItems = toProcess.Count;
+        progress.ItemsProcessed = 0;
+
+        int created = 0, skipped = 0, removed = 0;
+
+        var seriesCatMap = allSeries.ToDictionary(s => s.SeriesId, s => catMap.TryGetValue(s.CategoryId ?? 0, out var cn) ? cn : "Uncategorized");
+
+        foreach (var series in toProcess)
+        {
+            if (ct.IsCancellationRequested) break;
+
+            progress.CurrentItem = series.Name;
+
+            var catName   = seriesCatMap.TryGetValue(series.SeriesId, out var cn) ? cn : "Uncategorized";
+            var seriesDir = Path.Combine(_outputRoot, "Series", catName, Sanitize(series.Name));
+            Directory.CreateDirectory(seriesDir);
+
+            var info = await _client.GetSeriesStreamsBySeriesAsync(series.SeriesId, ct);
+            if (info?.Episodes is null)
             {
-                if (ct.IsCancellationRequested) break;
-                var key = series.SeriesId.ToString();
-                if (state.SyncedSeriesIds.Contains(key)) continue;
+                skipped++;
+                continue;
+            }
 
-                var info = await _client.GetSeriesStreamsBySeriesAsync(series.SeriesId, ct);
-                if (info?.Episodes is null) continue;
+            if (_settings.Sync.GenerateNfoFiles)
+            {
+                TmdbResult? tmdb = null;
+                if (_settings.Sync.EnableMetadataLookup && !string.IsNullOrEmpty(_settings.Sync.TmdbApiKey))
+                    tmdb = await _metadata.SearchSeriesAsync(series.Name, 0, ct);
 
-                var seriesDir = Path.Combine(_outputRoot, "Series", catName, Sanitize(series.Name));
-                Directory.CreateDirectory(seriesDir);
+                await NfoWriter.WriteSeriesNfoAsync(Path.Combine(seriesDir, "tvshow.nfo"), series, tmdb);
+            }
 
-                if (_settings.Sync.GenerateNfoFiles)
-                    WriteSeriesNfo(Path.Combine(seriesDir, "tvshow.nfo"), series, info);
-
-                foreach (var (_, episodes) in info.Episodes)
-                foreach (var ep in episodes)
+            var sem = new SemaphoreSlim(_settings.Sync.SyncParallelism, _settings.Sync.SyncParallelism);
+            var epTasks = info.Episodes
+                .SelectMany(kv => kv.Value)
+                .Select(async ep =>
                 {
                     var seasonDir = Path.Combine(seriesDir, $"Season {ep.Season:D2}");
                     Directory.CreateDirectory(seasonDir);
 
                     var epFile = $"S{ep.Season:D2}E{ep.EpisodeNum:D2} - {Sanitize(ep.Title)}";
-                    var url = _client.BuildSeriesStreamUrl(ep.EpisodeId, ep.ContainerExtension);
-                    WriteStrm(Path.Combine(seasonDir, $"{epFile}.strm"), url);
+                    var url    = _client.BuildSeriesStreamUrl(ep.EpisodeId, ep.ContainerExtension);
+                    WriteStrmIfNew(Path.Combine(seasonDir, $"{epFile}.strm"), url);
 
                     if (_settings.Sync.GenerateNfoFiles)
-                        WriteEpisodeNfo(Path.Combine(seasonDir, $"{epFile}.nfo"), ep, series.Name);
-                }
+                        await NfoWriter.WriteEpisodeNfoAsync(Path.Combine(seasonDir, $"{epFile}.nfo"), ep, series.Name);
+                });
 
-                state.SyncedSeriesIds.Add(key);
-                added++;
-                if (added % 10 == 0) await _repo.SaveAsync(state, ct);
-            }
+            await Task.WhenAll(epTasks);
+
+            state.SyncedSeriesIds.Add(series.SeriesId.ToString());
+            created++;
+            progress.ItemsProcessed++;
+        }
+
+        // Orphan cleanup
+        if (_settings.Sync.CleanupOrphans)
+        {
+            var currentIds = new HashSet<int>(allSeries.Select(s => s.SeriesId));
+            removed = CleanupSeriesOrphans(currentIds, allSeries.Count);
+        }
+
+        // Update snapshot
+        if (_settings.Sync.EnableSnapshotSync)
+        {
+            var snap = prevSnapshot ?? new ContentSnapshot();
+            snap.TakenAt = DateTimeOffset.UtcNow;
+            snap.Series  = DeltaCalculator.BuildSeriesSnapshot(allSeries);
+            await _snapshots.SaveAsync(snap, ct);
         }
 
         await _repo.SaveAsync(state, ct);
-        _logger.LogInformation("Series sync complete: {N} new shows", added);
+        _logger.LogInformation("Series sync complete: {Created} created, {Skipped} skipped, {Removed} removed", created, skipped, removed);
+        return (created, skipped, removed);
     }
 
-    // ── File writers ──────────────────────────────────────────────────────────
+    // ── Orphan cleanup ────────────────────────────────────────────────────────
 
-    private static void WriteStrm(string path, string url)
+    private async Task<int> CleanupMovieOrphansAsync(
+        HashSet<int> currentIds,
+        int totalCount,
+        CancellationToken ct)
+    {
+        var moviesRoot = Path.Combine(_outputRoot, "Movies");
+        if (!Directory.Exists(moviesRoot)) return 0;
+
+        var strmFiles = Directory.GetFiles(moviesRoot, "*.strm", SearchOption.AllDirectories);
+        var toRemove  = new List<string>();
+
+        // A movie strm is an orphan if its stream_id no longer appears in currentIds
+        // We infer the stream_id from the URL inside the strm file
+        foreach (var strm in strmFiles)
+        {
+            try
+            {
+                var url = await File.ReadAllTextAsync(strm, ct);
+                if (TryExtractVodId(url, out var id) && !currentIds.Contains(id))
+                    toRemove.Add(strm);
+            }
+            catch { /* skip */ }
+        }
+
+        if (toRemove.Count == 0) return 0;
+
+        var percent = totalCount > 0 ? (double)toRemove.Count / totalCount : 1.0;
+        if (percent > _settings.Sync.OrphanSafetyThreshold)
+        {
+            _logger.LogWarning(
+                "Orphan cleanup aborted — would remove {Count} files ({Pct:P0}), exceeds {Threshold:P0} threshold",
+                toRemove.Count, percent, _settings.Sync.OrphanSafetyThreshold);
+            return 0;
+        }
+
+        foreach (var f in toRemove)
+        {
+            try
+            {
+                File.Delete(f);
+                var nfo = Path.ChangeExtension(f, ".nfo");
+                if (File.Exists(nfo)) File.Delete(nfo);
+            }
+            catch (Exception ex) { _logger.LogWarning(ex, "Could not delete orphan {F}", f); }
+        }
+
+        _logger.LogInformation("Removed {Count} movie orphans", toRemove.Count);
+        return toRemove.Count;
+    }
+
+    private int CleanupSeriesOrphans(HashSet<int> currentIds, int totalCount)
+    {
+        var seriesRoot = Path.Combine(_outputRoot, "Series");
+        if (!Directory.Exists(seriesRoot)) return 0;
+        return 0; // Series orphan cleanup: more complex, not implemented for safety
+    }
+
+    // ── File helpers ──────────────────────────────────────────────────────────
+
+    private static void WriteStrmIfNew(string path, string url)
     {
         if (File.Exists(path)) return;
         File.WriteAllText(path, url, Encoding.UTF8);
     }
 
-    private void WriteMovieNfo(string path, XtreamVodStream vod, XtreamVodInfoDetails details, int year, string title)
+    private static bool TryExtractVodId(string url, out int id)
     {
-        if (File.Exists(path)) return;
-        File.WriteAllText(path, $"""
-<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<movie>
-  <title>{XE(title)}</title>
-  <originaltitle>{XE(details.OriginalName ?? title)}</originaltitle>
-  <year>{year}</year>
-  <rating>{details.Rating}</rating>
-  <plot>{XE(details.Plot ?? "")}</plot>
-  <genre>{XE(details.Genre ?? "")}</genre>
-  <director>{XE(details.Director ?? "")}</director>
-  <credits>{XE(details.Cast ?? "")}</credits>
-  <thumb>{XE(details.MovieImage ?? "")}</thumb>
-  <runtime>{(details.DurationSecs ?? 0) / 60}</runtime>
-  {(details.TmdbId is not null ? $"<uniqueid type=\"tmdb\">{details.TmdbId}</uniqueid>" : "")}
-</movie>
-""", Encoding.UTF8);
-    }
-
-    private void WriteSeriesNfo(string path, XtreamSeries series, XtreamSeriesStreamInfo info)
-    {
-        if (File.Exists(path)) return;
-        File.WriteAllText(path, $"""
-<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<tvshow>
-  <title>{XE(series.Name)}</title>
-  <year>{ParseYear(null)}</year>
-  <plot>{XE(series.Plot)}</plot>
-  <genre>{XE(series.Genre)}</genre>
-  <director>{XE(series.Director)}</director>
-  <credits>{XE(series.Cast)}</credits>
-  <thumb>{XE(series.Cover)}</thumb>
-  {(info.Info.Tmdb is not null ? $"<uniqueid type=\"tmdb\">{info.Info.Tmdb}</uniqueid>" : "")}
-</tvshow>
-""", Encoding.UTF8);
-    }
-
-    private void WriteEpisodeNfo(string path, XtreamEpisode ep, string showName)
-    {
-        if (File.Exists(path)) return;
-        File.WriteAllText(path, $"""
-<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<episodedetails>
-  <title>{XE(ep.Title)}</title>
-  <showtitle>{XE(showName)}</showtitle>
-  <season>{ep.Season}</season>
-  <episode>{ep.EpisodeNum}</episode>
-  <aired>{XE(ep.Info?.ReleaseDate ?? "")}</aired>
-  <plot>{XE(ep.Info?.Plot ?? "")}</plot>
-  <runtime>{(ep.Info?.DurationSecs ?? 0) / 60}</runtime>
-  <rating>{ep.Info?.Rating}</rating>
-  <thumb>{XE(ep.Info?.MovieImage ?? "")}</thumb>
-</episodedetails>
-""", Encoding.UTF8);
+        id = 0;
+        // Pattern: .../movie/{user}/{pass}/{id}.{ext}
+        var match = Regex.Match(url, @"/movie/[^/]+/[^/]+/(\d+)\.");
+        if (match.Success) return int.TryParse(match.Groups[1].Value, out id);
+        return false;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -220,8 +353,6 @@ public sealed class StrmGeneratorService
         if (date.Length >= 4 && int.TryParse(date[..4], out var y) && y > 1900 && y < 2200) return y;
         return 0;
     }
-
-    private static string XE(string? s) => System.Security.SecurityElement.Escape(s ?? "") ?? "";
 
     private static IEnumerable<int> GetCategoryIds(List<int> filter, IEnumerable<int> all)
         => filter.Count > 0 ? filter : all;

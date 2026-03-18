@@ -104,6 +104,17 @@ public sealed class SyncSettings
     /// </summary>
     public double OrphanSafetyThreshold { get; set; } = 0.20;
 
+    // ── Snapshot-based incremental sync ──────────────────────────────────
+    /// <summary>Use snapshot-based incremental sync (only process new/changed items)</summary>
+    public bool EnableSnapshotSync { get; set; } = true;
+
+    // ── TMDb metadata lookup ──────────────────────────────────────────────
+    /// <summary>When true, enriches NFO files with data from TMDb API</summary>
+    public bool EnableMetadataLookup { get; set; } = false;
+
+    /// <summary>TMDb API v3 key (get one at https://www.themoviedb.org/settings/api)</summary>
+    public string TmdbApiKey { get; set; } = string.Empty;
+
     public void Validate()
     {
         SyncParallelism = Math.Clamp(SyncParallelism, 1, 20);

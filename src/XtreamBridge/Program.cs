@@ -21,7 +21,6 @@ builder.Host.UseSerilog();
 
 // ── Configuration ─────────────────────────────────────────────────────────────
 // Load in priority order: appsettings.json → override file → env vars
-// UsePollingFileWatcher=true ensures Docker bind-mount changes are detected
 var overridePath = Path.Combine(configDir, "appsettings.override.json");
 var overrideDir  = Path.GetDirectoryName(overridePath)!;
 Directory.CreateDirectory(overrideDir);
@@ -45,21 +44,30 @@ builder.Services.Configure<AppSettings>(builder.Configuration);
 // ── Persistence ───────────────────────────────────────────────────────────────
 builder.Services.AddSingleton<SyncStateRepository>();
 
-// ── HTTP Client ───────────────────────────────────────────────────────────────
+// ── HTTP Clients ──────────────────────────────────────────────────────────────
 builder.Services.AddHttpClient<XtreamClient>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(30);
+});
+
+// Named HTTP client for TMDb metadata (no Xtream credentials)
+builder.Services.AddHttpClient("tmdb", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(10);
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
 });
 
 // ── Application Services ──────────────────────────────────────────────────────
 builder.Services.AddScoped<XtreamClient>();
 builder.Services.AddScoped<StrmGeneratorService>();
 builder.Services.AddSingleton<EpgService>();
+builder.Services.AddSingleton<SnapshotService>();
+builder.Services.AddSingleton<MetadataService>();
 builder.Services.AddSingleton<SyncBackgroundService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SyncBackgroundService>());
 
 // ── API ───────────────────────────────────────────────────────────────────────
-builder.Services.AddControllers(); // responses use System.Text.Json; Newtonsoft.Json only used inside XtreamClient
+builder.Services.AddControllers(); // responses use System.Text.Json; Newtonsoft.Json only inside XtreamClient
 
 builder.Services.AddResponseCaching();
 builder.Services.AddEndpointsApiExplorer();
@@ -86,12 +94,13 @@ var settings = app.Services
 
 if (string.IsNullOrEmpty(settings.Server.BaseUrl))
 {
-    Log.Warning("⚠  No Xtream credentials configured yet — open http://<host>:8080 to set them up");
+    Log.Warning("No Xtream credentials configured yet — open http://<host>:8080 to set them up");
 }
 else
 {
-    Log.Information("XtreamBridge ready | Provider: {Url} | LiveTV={Live} | STRM={Strm}",
-        settings.Server.BaseUrl, settings.Bridge.EnableLiveTv, settings.Bridge.EnableStrmGeneration);
+    Log.Information("XtreamBridge ready | Provider: {Url} | LiveTV={Live} | STRM={Strm} | Snapshots={Snap} | TMDb={Tmdb}",
+        settings.Server.BaseUrl, settings.Bridge.EnableLiveTv, settings.Bridge.EnableStrmGeneration,
+        settings.Sync.EnableSnapshotSync, settings.Sync.EnableMetadataLookup);
 }
 
 await app.RunAsync();
