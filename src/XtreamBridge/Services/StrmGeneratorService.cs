@@ -98,9 +98,17 @@ public sealed class StrmGeneratorService
         int created = 0, skipped = 0, removed = 0;
         int processedCount = 0;
 
-        var streamCatMap = allStreams.ToDictionary(
-            s => s.StreamId,
-            s => catMap.TryGetValue(s.CategoryId ?? 0, out var cn) ? cn : "Uncategorized");
+        var streamCatMap = allStreams
+            .GroupBy(s => s.StreamId)
+            .ToDictionary(
+                g => g.Key,
+                g => catMap.TryGetValue(g.First().CategoryId ?? 0, out var cn) ? cn : "Uncategorized");
+
+        // Deduplicate VOD streams
+        allStreams = allStreams
+            .GroupBy(s => s.StreamId)
+            .Select(g => g.First())
+            .ToList();
 
         await Parallel.ForEachAsync(
             allStreams,
@@ -215,9 +223,18 @@ public sealed class StrmGeneratorService
 
         int created = 0, skipped = 0, removed = 0;
 
-        var seriesCatMap = allSeries.ToDictionary(
-            s => s.SeriesId,
-            s => catMap.TryGetValue(s.CategoryId ?? 0, out var cn) ? cn : "Uncategorized");
+        // Use GroupBy to tolerate duplicate SeriesId from some providers
+        var seriesCatMap = allSeries
+            .GroupBy(s => s.SeriesId)
+            .ToDictionary(
+                g => g.Key,
+                g => catMap.TryGetValue(g.First().CategoryId ?? 0, out var cn) ? cn : "Uncategorized");
+
+        // Deduplicate: keep only first occurrence of each SeriesId
+        allSeries = allSeries
+            .GroupBy(s => s.SeriesId)
+            .Select(g => g.First())
+            .ToList();
 
         foreach (var series in allSeries)
         {
@@ -265,12 +282,16 @@ public sealed class StrmGeneratorService
             if (Settings.Sync.GenerateNfoFiles)
                 await NfoWriter.WriteSeriesNfoAsync(Path.Combine(seriesDir, "tvshow.nfo"), series, tmdb);
 
-            foreach (var ep in info.Episodes.SelectMany(kv => kv.Value))
+            foreach (var (seasonNum, episodes) in info.Episodes)
+            foreach (var ep in episodes)
             {
-                var seasonDir = Path.Combine(seriesDir, $"Season {ep.Season:D2}");
+                // ep.Season is 0 on some providers — fall back to the dictionary key
+                var season    = ep.Season > 0 ? ep.Season : seasonNum;
+                var epTitle   = string.IsNullOrWhiteSpace(ep.Title) ? $"Episode {ep.EpisodeNum}" : ep.Title;
+                var seasonDir = Path.Combine(seriesDir, $"Season {season:D2}");
                 Directory.CreateDirectory(seasonDir);
 
-                var epFile   = $"S{ep.Season:D2}E{ep.EpisodeNum:D2} - {Sanitize(ep.Title)}";
+                var epFile   = $"S{season:D2}E{ep.EpisodeNum:D2} - {Sanitize(epTitle)}";
                 var url      = _client.BuildSeriesStreamUrl(ep.EpisodeId, ep.ContainerExtension);
                 var strmPath = Path.Combine(seasonDir, $"{epFile}.strm");
 
@@ -282,7 +303,7 @@ public sealed class StrmGeneratorService
                 {
                     var nfoPath = Path.Combine(seasonDir, $"{epFile}.nfo");
                     if (!File.Exists(nfoPath))
-                        await NfoWriter.WriteEpisodeNfoAsync(nfoPath, ep, series.Name);
+                        await NfoWriter.WriteEpisodeNfoAsync(nfoPath, ep, series.Name, season);
                 }
             }
 

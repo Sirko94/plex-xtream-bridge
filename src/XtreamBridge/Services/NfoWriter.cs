@@ -152,7 +152,8 @@ public static class NfoWriter
     public static async Task WriteEpisodeNfoAsync(
         string path,
         XtreamEpisode ep,
-        string seriesName)
+        string seriesName,
+        int? seasonOverride = null)
     {
         if (File.Exists(path)) return;
 
@@ -163,9 +164,13 @@ public static class NfoWriter
             w.WriteStartDocument();
             w.WriteStartElement("episodedetails");
 
-            w.WriteElementString("title", ep.Title);
+            var season = seasonOverride.HasValue && seasonOverride.Value > 0 ? seasonOverride.Value
+                       : ep.Season > 0 ? ep.Season
+                       : 1;
+            var title  = string.IsNullOrWhiteSpace(ep.Title) ? $"Episode {ep.EpisodeNum}" : ep.Title;
+            w.WriteElementString("title", title);
             w.WriteElementString("showtitle", seriesName);
-            w.WriteElementString("season", ep.Season.ToString());
+            w.WriteElementString("season", season.ToString());
             w.WriteElementString("episode", ep.EpisodeNum.ToString());
 
             if (!string.IsNullOrEmpty(ep.Info?.ReleaseDate))
