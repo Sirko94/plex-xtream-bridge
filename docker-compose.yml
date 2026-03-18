@@ -15,6 +15,10 @@ services:
       - ./config:/config  # config sauvegardée par l'interface web + logs
       - ./output:/output  # fichiers .strm/.nfo pour Plex
 
+    dns:
+      - 9.9.9.9
+      - 149.112.112.112
+
     environment:
       # Remplace l'IP par celle de ton serveur
       XTREAM__Bridge__PublicBaseUrl: "http://192.168.1.100:7070"
