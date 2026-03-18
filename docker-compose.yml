@@ -9,7 +9,7 @@ services:
     restart: unless-stopped
 
     ports:
-      - "8080:8080"       # HDHomeRun discovery + EPG + stream proxy
+      - "7070:8080"       # HDHomeRun discovery + EPG + stream proxy
 
     volumes:
       - ./config:/config  # sync state, logs, optional appsettings override
@@ -23,7 +23,7 @@ services:
 
       # ── Bridge settings ───────────────────────────────────────────────────
       # IMPORTANT: set this to the LAN IP/hostname Plex uses to reach this container
-      XTREAM__Bridge__PublicBaseUrl: "http://192.168.1.100:8080"
+      XTREAM__Bridge__PublicBaseUrl: "http://192.168.1.100:7070"
       XTREAM__Bridge__DeviceName: "XtreamBridge"
       XTREAM__Bridge__TunerCount: "6"
       XTREAM__Bridge__EnableLiveTv: "true"
