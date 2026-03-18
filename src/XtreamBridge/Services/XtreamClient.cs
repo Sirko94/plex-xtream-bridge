@@ -148,8 +148,20 @@ public sealed class XtreamClient
     {
         var json = await GetStringWithRetryAsync(url, ct);
 
-        // Guard: some providers return [] where {} is expected (e.g. SeriesStreamInfo)
         var trimmed = json.TrimStart();
+
+        // Detect HTML response — provider returned an error/redirect page instead of JSON
+        if (trimmed.StartsWith('<'))
+        {
+            var preview = json.Length > 300 ? json[..300] : json;
+            _logger.LogError(
+                "Provider returned HTML instead of JSON — check BaseUrl and port number.\n" +
+                "URL attempted: {Url}\nResponse preview: {Preview}", url, preview);
+            throw new InvalidOperationException(
+                "Provider returned HTML instead of JSON. Verify the BaseUrl includes the correct port (e.g. http://host:8080).");
+        }
+
+        // Guard: some providers return [] where {} is expected (e.g. SeriesStreamInfo)
         if (trimmed.StartsWith('[') && typeof(T) == typeof(XtreamSeriesStreamInfo))
         {
             _logger.LogWarning("Provider returned array for {Type} — returning empty object", typeof(T).Name);
@@ -163,7 +175,8 @@ public sealed class XtreamClient
         }
         catch (JsonException ex)
         {
-            _logger.LogError(ex, "JSON deserialisation failed for {Type}", typeof(T).Name);
+            _logger.LogError(ex, "JSON deserialisation failed for {Type}\nRaw response (first 300 chars): {Preview}",
+                typeof(T).Name, json.Length > 300 ? json[..300] : json);
             throw;
         }
     }
