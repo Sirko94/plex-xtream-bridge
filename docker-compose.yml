@@ -21,7 +21,7 @@ services:
 
     environment:
       # Remplace l'IP par celle de ton serveur
-      XTREAM__Bridge__PublicBaseUrl: "http://192.168.1.100:7070"
+      XTREAM__Bridge__PublicBaseUrl: "http://192.168.1.16:7070"
       TZ: "Europe/Paris"
 
     # Les credentials Xtream se configurent via l'interface web : http://IP:7070
