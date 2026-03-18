@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -33,6 +34,7 @@ public sealed class ConfigController : ControllerBase
     private readonly XtreamClient _client;
     private readonly SnapshotService _snapshots;
     private readonly IConfiguration _configuration;
+    private readonly IHttpClientFactory _httpFactory;
     private readonly ILogger<ConfigController> _logger;
 
     private static readonly JsonSerializerOptions _prettyJson = new() { WriteIndented = true };
@@ -44,10 +46,12 @@ public sealed class ConfigController : ControllerBase
         XtreamClient client,
         SnapshotService snapshots,
         IConfiguration configuration,
+        IHttpClientFactory httpFactory,
         ILogger<ConfigController> logger)
     {
         _opts          = opts;
         _repo          = repo;
+        _httpFactory   = httpFactory;
         _sync          = sync;
         _client        = client;
         _snapshots     = snapshots;
@@ -87,26 +91,62 @@ public sealed class ConfigController : ControllerBase
     [HttpPost("config/test")]
     public async Task<IActionResult> TestConnection([FromBody] XtreamServerSettings creds, CancellationToken ct)
     {
-        using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-        var url = $"{creds.BaseUrl.TrimEnd('/')}/player_api.php" +
-                  $"?username={Uri.EscapeDataString(creds.Username)}" +
-                  $"&password={Uri.EscapeDataString(creds.Password)}";
+        // Use the same typed HttpClient as XtreamClient (has VLC User-Agent + Accept headers)
+        var http = _httpFactory.CreateClient(nameof(XtreamClient));
+        var e    = (string s) => Uri.EscapeDataString(s);
+        var base_ = creds.BaseUrl.TrimEnd('/');
+
         try
         {
-            var response = await httpClient.GetAsync(url, ct);
-            if (!response.IsSuccessStatusCode)
-                return Ok(new { success = false, error = $"HTTP {(int)response.StatusCode}" });
+            // 1. Try classic player_api.php GET
+            var classicUrl = $"{base_}/player_api.php?username={e(creds.Username)}&password={e(creds.Password)}";
+            var body = await TryGetAsync(http, classicUrl, ct);
 
-            var body = await response.Content.ReadAsStringAsync(ct);
-            if (body.Contains("\"auth\":1") || body.Contains("\"auth\": 1"))
-                return Ok(new { success = true, message = "Connexion réussie ✓" });
+            // 2. If HTML, try REST POST /account/information
+            if (body is null || body.TrimStart().StartsWith('<'))
+            {
+                var restUrl = $"{base_}/account/information";
+                var payload = System.Text.Json.JsonSerializer.Serialize(new { username = creds.Username, password = creds.Password });
+                using var content = new StringContent(payload, Encoding.UTF8, "application/json");
+                var resp = await http.PostAsync(restUrl, content, ct);
+                body = resp.IsSuccessStatusCode ? await resp.Content.ReadAsStringAsync(ct) : null;
+            }
 
-            return Ok(new { success = false, error = "Authentification échouée — vérifiez identifiants" });
+            if (body is null || body.TrimStart().StartsWith('<'))
+                return Ok(new { success = false, error = "Le serveur retourne du HTML — URL incorrecte ?" });
+
+            // Parse auth field
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+
+            // Handle both flat {user_info:{auth:1}} and wrapped {data:{user_info:{auth:1}}}
+            if (root.TryGetProperty("data", out var data)) root = data;
+
+            if (root.TryGetProperty("user_info", out var ui) &&
+                ui.TryGetProperty("auth", out var authProp) &&
+                authProp.GetInt32() == 1)
+            {
+                var status = ui.TryGetProperty("status", out var s) ? s.GetString() : "?";
+                var exp    = ui.TryGetProperty("exp_date", out var ex) ? ex.ToString() : "N/A";
+                return Ok(new { success = true, message = $"Connexion réussie ✓ (status: {status}, exp: {exp})" });
+            }
+
+            return Ok(new { success = false, error = "Authentification refusée — vérifiez identifiant/mot de passe" });
         }
         catch (Exception ex)
         {
             return Ok(new { success = false, error = ex.Message });
         }
+    }
+
+    private static async Task<string?> TryGetAsync(HttpClient http, string url, CancellationToken ct)
+    {
+        try
+        {
+            var resp = await http.GetAsync(url, ct);
+            return resp.IsSuccessStatusCode ? await resp.Content.ReadAsStringAsync(ct) : null;
+        }
+        catch { return null; }
     }
 
     // ── Status ────────────────────────────────────────────────────────────────
