@@ -1,0 +1,18 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.swp
+
+# Config runtime (secrets, overrides, logs)
+config/
+output/
+
+# Docker volumes
+docker-compose.override.yml
+
+# OS
+.DS_Store
+Thumbs.db

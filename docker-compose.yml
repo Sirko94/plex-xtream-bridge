@@ -1,0 +1,50 @@
+version: "3.9"
+
+services:
+  xtream-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: xtream-bridge
+    restart: unless-stopped
+
+    ports:
+      - "8080:8080"       # HDHomeRun discovery + EPG + stream proxy
+
+    volumes:
+      - ./config:/config  # sync state, logs, optional appsettings override
+      - ./output:/output  # .strm/.nfo files — add this path as a Plex library
+
+    environment:
+      # ── Xtream Codes credentials ──────────────────────────────────────────
+      XTREAM__Server__BaseUrl: "http://your-provider.com:8080"
+      XTREAM__Server__Username: "your_username"
+      XTREAM__Server__Password: "your_password"
+
+      # ── Bridge settings ───────────────────────────────────────────────────
+      # IMPORTANT: set this to the LAN IP/hostname Plex uses to reach this container
+      XTREAM__Bridge__PublicBaseUrl: "http://192.168.1.100:8080"
+      XTREAM__Bridge__DeviceName: "XtreamBridge"
+      XTREAM__Bridge__TunerCount: "6"
+      XTREAM__Bridge__EnableLiveTv: "true"
+      XTREAM__Bridge__EnableStrmGeneration: "true"
+
+      # ── Sync settings ─────────────────────────────────────────────────────
+      XTREAM__Sync__RefreshIntervalHours: "6"
+      XTREAM__Sync__GenerateNfoFiles: "true"
+      XTREAM__Sync__LiveStreamExtension: "ts"  # ts or m3u8
+
+      # ── Optional: filter by category (comma-separated IDs) ────────────────
+      # XTREAM__Sync__LiveCategoryFilter__0: "1"
+      # XTREAM__Sync__VodCategoryFilter__0: "5"
+
+      TZ: "Europe/Paris"
+
+    # Optional: share output directly with Plex if on the same host
+    # (remove the external volume if Plex is in a separate compose stack)
+    # networks:
+    #   - plex_net
+
+# networks:
+#   plex_net:
+#     external: true

@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>XtreamBridge</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <nav class="sidebar">
+    <div class="logo">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 10.8a19.79 19.79 0 01-3.07-8.67A2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 14h-0z"/>
+      </svg>
+      <span>XtreamBridge</span>
+    </div>
+    <ul class="nav-links">
+      <li><a href="#status" class="active" data-section="status">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Tableau de bord
+      </a></li>
+      <li><a href="#server" data-section="server">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+        Fournisseur Xtream
+      </a></li>
+      <li><a href="#bridge" data-section="bridge">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+        Bridge / Plex
+      </a></li>
+      <li><a href="#sync" data-section="sync">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+        Synchronisation
+      </a></li>
+      <li><a href="#live" data-section="live">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+        Live TV
+      </a></li>
+    </ul>
+    <div class="sidebar-footer">
+      <span id="version">v1.0.0</span>
+    </div>
+  </nav>
+
+  <main class="content">
+
+    <!-- ── Tableau de bord ────────────────────────────────────────────────── -->
+    <section id="status" class="section active">
+      <h1>Tableau de bord</h1>
+      <div class="stats-grid">
+        <div class="stat-card" id="stat-sync">
+          <div class="stat-icon green">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <div>
+            <div class="stat-value" id="last-sync">–</div>
+            <div class="stat-label">Dernière sync</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon blue">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+          </div>
+          <div>
+            <div class="stat-value" id="stat-live">–</div>
+            <div class="stat-label">Chaînes Live</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon purple">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2"/><line x1="12" y1="2" x2="12" y2="22"/></svg>
+          </div>
+          <div>
+            <div class="stat-value" id="stat-movies">–</div>
+            <div class="stat-label">Films synchronisés</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon orange">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 2H8a2 2 0 00-2 2v3h12V4a2 2 0 00-2-2z"/></svg>
+          </div>
+          <div>
+            <div class="stat-value" id="stat-series">–</div>
+            <div class="stat-label">Séries synchronisées</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Actions rapides</h2>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="btn-sync">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+            Synchroniser maintenant
+          </button>
+          <button class="btn btn-secondary" id="btn-refresh-status">Actualiser le statut</button>
+        </div>
+        <div id="sync-message" class="message hidden"></div>
+      </div>
+
+      <div class="card">
+        <h2>Intégration Plex</h2>
+        <div class="code-block">
+          <div class="code-label">URL Discovery HDHomeRun</div>
+          <code id="plex-discover-url">–</code>
+          <button class="copy-btn" data-target="plex-discover-url">Copier</button>
+        </div>
+        <div class="code-block">
+          <div class="code-label">URL Guide EPG (XMLTV)</div>
+          <code id="plex-epg-url">–</code>
+          <button class="copy-btn" data-target="plex-epg-url">Copier</button>
+        </div>
+        <p class="hint">Dans Plex → <em>Paramètres → Live TV &amp; DVR → Ajouter un périphérique</em> → entrer l'URL Discovery.</p>
+      </div>
+    </section>
+
+    <!-- ── Fournisseur Xtream ──────────────────────────────────────────────── -->
+    <section id="server" class="section">
+      <h1>Fournisseur Xtream Codes</h1>
+      <div class="card">
+        <div class="form-group">
+          <label for="server-url">URL du serveur</label>
+          <input type="url" id="server-url" placeholder="http://provider.example.com:8080" />
+          <span class="hint">Adresse de base sans le slash final</span>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="server-user">Nom d'utilisateur</label>
+            <input type="text" id="server-user" placeholder="username" autocomplete="off" />
+          </div>
+          <div class="form-group">
+            <label for="server-pass">Mot de passe</label>
+            <input type="password" id="server-pass" placeholder="••••••••" autocomplete="off" />
+            <button class="toggle-pass" aria-label="Afficher/Masquer">👁</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="server-ua">User-Agent personnalisé <span class="optional">(optionnel)</span></label>
+          <input type="text" id="server-ua" placeholder="Mozilla/5.0 ..." />
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-success" id="btn-test">Tester la connexion</button>
+          <button class="btn btn-primary" id="btn-save-server">Enregistrer</button>
+        </div>
+        <div id="test-result" class="message hidden"></div>
+      </div>
+    </section>
+
+    <!-- ── Bridge / Plex ──────────────────────────────────────────────────── -->
+    <section id="bridge" class="section">
+      <h1>Paramètres Bridge / Plex</h1>
+      <div class="card">
+        <div class="form-group">
+          <label for="bridge-url">URL publique de ce conteneur</label>
+          <input type="url" id="bridge-url" placeholder="http://192.168.1.100:8080" />
+          <span class="hint">IP/hostname accessible depuis Plex — utilisé dans lineup.json</span>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="bridge-name">Nom du device</label>
+            <input type="text" id="bridge-name" value="XtreamBridge" />
+          </div>
+          <div class="form-group">
+            <label for="bridge-tuners">Nombre de tuners virtuels</label>
+            <input type="number" id="bridge-tuners" value="6" min="1" max="20" />
+          </div>
+        </div>
+        <div class="form-row toggles">
+          <div class="form-group toggle-group">
+            <label class="toggle">
+              <input type="checkbox" id="bridge-livetv" checked />
+              <span class="slider"></span>
+            </label>
+            <div>
+              <div class="toggle-label">Live TV (HDHomeRun)</div>
+              <div class="hint">Émuler un tuner réseau pour Plex DVR</div>
+            </div>
+          </div>
+          <div class="form-group toggle-group">
+            <label class="toggle">
+              <input type="checkbox" id="bridge-strm" checked />
+              <span class="slider"></span>
+            </label>
+            <div>
+              <div class="toggle-label">Génération STRM</div>
+              <div class="hint">Créer des fichiers .strm et .nfo dans /output</div>
+            </div>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="btn-save-bridge">Enregistrer</button>
+        </div>
+        <div id="bridge-message" class="message hidden"></div>
+      </div>
+    </section>
+
+    <!-- ── Synchronisation ────────────────────────────────────────────────── -->
+    <section id="sync" class="section">
+      <h1>Synchronisation</h1>
+      <div class="card">
+        <h2>Planification</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="sync-schedule">Mode</label>
+            <select id="sync-schedule">
+              <option value="Interval">Intervalle (toutes les N heures)</option>
+              <option value="Daily">Quotidien (heure fixe)</option>
+            </select>
+          </div>
+          <div class="form-group" id="interval-group">
+            <label for="sync-interval">Intervalle (heures)</label>
+            <input type="number" id="sync-interval" value="6" min="1" max="168" />
+          </div>
+          <div class="form-group hidden" id="daily-group">
+            <label>Heure</label>
+            <div class="form-row tight">
+              <input type="number" id="sync-hour" value="3" min="0" max="23" placeholder="H" />
+              <span class="sep">:</span>
+              <input type="number" id="sync-minute" value="0" min="0" max="59" placeholder="MM" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Contenu</h2>
+        <div class="toggles">
+          <div class="form-group toggle-group">
+            <label class="toggle"><input type="checkbox" id="sync-nfo" checked /><span class="slider"></span></label>
+            <div><div class="toggle-label">Générer les fichiers .nfo</div><div class="hint">Métadonnées pour Plex (affiches, synopsis)</div></div>
+          </div>
+          <div class="form-group toggle-group">
+            <label class="toggle"><input type="checkbox" id="sync-adult" /><span class="slider"></span></label>
+            <div><div class="toggle-label">Inclure les chaînes adultes</div></div>
+          </div>
+          <div class="form-group toggle-group">
+            <label class="toggle"><input type="checkbox" id="sync-cleanup" checked /><span class="slider"></span></label>
+            <div><div class="toggle-label">Nettoyer les orphelins</div><div class="hint">Supprimer les .strm qui n'existent plus chez le fournisseur</div></div>
+          </div>
+          <div class="form-group toggle-group">
+            <label class="toggle"><input type="checkbox" id="sync-clean-names" checked /><span class="slider"></span></label>
+            <div><div class="toggle-label">Nettoyer les noms de chaînes</div><div class="hint">Supprime les tags (FHD, FR:, HEVC…)</div></div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="sync-ext">Format stream live</label>
+            <select id="sync-ext">
+              <option value="ts">MPEG-TS (.ts)</option>
+              <option value="m3u8">HLS (.m3u8)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="sync-parallelism">Parallélisme (threads)</label>
+            <input type="number" id="sync-parallelism" value="10" min="1" max="20" />
+          </div>
+          <div class="form-group">
+            <label for="sync-threshold">Seuil sécurité orphelins</label>
+            <input type="number" id="sync-threshold" value="20" min="0" max="100" step="5" />
+            <span class="hint">% max de fichiers supprimables</span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="sync-remove-terms">Termes à supprimer des noms <span class="optional">(un par ligne)</span></label>
+          <textarea id="sync-remove-terms" rows="3" placeholder="[FR]&#10;VOSTFR&#10;24/7"></textarea>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Limites de taux</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="sync-delay">Délai entre requêtes (ms)</label>
+            <input type="number" id="sync-delay" value="50" min="0" />
+          </div>
+          <div class="form-group">
+            <label for="sync-retries">Tentatives max</label>
+            <input type="number" id="sync-retries" value="3" min="0" max="10" />
+          </div>
+          <div class="form-group">
+            <label for="sync-retry-delay">Délai entre tentatives (ms)</label>
+            <input type="number" id="sync-retry-delay" value="1000" min="0" />
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="btn-save-sync">Enregistrer</button>
+        </div>
+        <div id="sync-save-message" class="message hidden"></div>
+      </div>
+    </section>
+
+    <!-- ── Live TV ────────────────────────────────────────────────────────── -->
+    <section id="live" class="section">
+      <h1>Live TV — Filtres de catégories</h1>
+      <p class="hint-top">Laissez vide pour inclure toutes les catégories. Cochez uniquement celles que vous voulez.</p>
+
+      <div class="card">
+        <h2>
+          Chaînes Live
+          <button class="btn btn-sm" id="btn-load-live">Charger depuis le fournisseur</button>
+        </h2>
+        <div id="cat-live-list" class="cat-list"><em>Cliquez sur "Charger" pour récupérer la liste.</em></div>
+      </div>
+
+      <div class="card">
+        <h2>
+          VOD — Films
+          <button class="btn btn-sm" id="btn-load-vod">Charger</button>
+        </h2>
+        <div id="cat-vod-list" class="cat-list"><em>Cliquez sur "Charger".</em></div>
+      </div>
+
+      <div class="card">
+        <h2>
+          Séries
+          <button class="btn btn-sm" id="btn-load-series">Charger</button>
+        </h2>
+        <div id="cat-series-list" class="cat-list"><em>Cliquez sur "Charger".</em></div>
+      </div>
+
+      <div class="card">
+        <h2>Overrides de chaînes <span class="optional">(avancé)</span></h2>
+        <textarea id="channel-overrides" rows="6"
+          placeholder="# Format: stream_id=Nom|Numéro|URL_Logo&#10;1234=BBC One|1|http://cdn.example.com/bbc.png&#10;5678=TF1|2|"></textarea>
+        <span class="hint">Un override par ligne. Le Numéro et l'URL_Logo sont optionnels.</span>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btn-save-live">Enregistrer les filtres</button>
+      </div>
+      <div id="live-message" class="message hidden"></div>
+    </section>
+
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
